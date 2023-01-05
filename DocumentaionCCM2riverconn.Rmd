@@ -1,0 +1,267 @@
+---
+title: "Documentation riverconn for CCM2"
+author: "Viola Wittekind"
+date: "2023-01-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Tutorial to create igraph objects from CCM2 data and calculate fragmentation indices with riverconn 
+
+# Introduction
+
+This document is a guide to create an igraph object from CCM2 geodata to use with the riverconn package. The pre-processing is adapted for CCM2 data that have a higher resolution than the ECRINS database on which the riverconn package was developed. Due to the directionallity information contained in CCM2 the pre-processing could be accelerated.
+Further changes are made in the inclusion of barriers and the creation of the igraph object.  
+This guide is based on the Tutorial of Damiano Baldan [riverconn_tutorial](https://damianobaldan.github.io/riverconn_tutorial/)
+
+# 1.1 Packages needed
+
+Make sure those libraries are installed, updated, and loaded.
+
+```{r packages, message=FALSE, warning=FALSE, results='hide'}
+library("rgdal")
+library("tidyverse")
+library("sf")
+library("raster")
+library("ggspatial")
+library("viridis")
+library("igraph")
+library("riverconn")
+library("elevatr")
+library("gridExtra")
+library("ggnetwork")
+library("lwgeom")
+library("gridExtra")
+library("RANN")
+library("ggpubr")
+library("cowplot")
+library("data.table")
+library("rgeos")
+library("foreach")
+library("doParallel")
+
+```
+By using 'sf' objects and their ability to link geographic information to the data.frame structure, it is easy to edit the flow geometry.
+
+# Data Input 
+
+For the river network the geodatabase CCM2 is used [CCM2](https://ccm.jrc.ec.europa.eu/php/index.php?action=view&id=24). 
+The CCM2 data is divided in Data Windows. The relevant layers of the databases for this guide are "SEAOUTLETS" (basin_file), "RIVERSEGMENTS"(river_file) and "RIVERNODES" (confluences).
+
+
+Information of barriers are taken from [AMBER](https://www.nature.com/articles/s41586-020-3005-2).
+
+The files and databases can be imported in R. Set the path to the location of the database and dbname to the name of the database!
+For the import of the barriers set amberpath to the path of the csv file with the barrier information.
+
+```{r read shapes , message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+#Segments and Confluences
+window <- "2004"
+dbname <- paste0("LAEA_W",window,".gdb") 
+path <- paste0("River_data/CCM/CCM21_LAEA_window",window,"/ccm21/") 
+
+#ogrListLayers(paste0(path,dbname)) #List the Layers of the db 
+options(knitr.duplicate.label = "allow")
+
+basin_file <- st_read(paste0(path,dbname), layer = "SEAOUTLETS" )
+river_file  <- st_read(paste0(path,dbname), layer = "RIVERSEGMENTS" )
+confluences <- st_read(paste0(path,dbname), layer = "RIVERNODES" )
+
+#Barriers
+amberpath <- "River_data/AMBER/atlas.csv" 
+
+amber <- fread(amberpath)
+
+```
+# Chose River Basin 
+
+To choose the River Basin you can either look for a name of a river (in this example river "Tajo") or directly use the WSO_ID as an unique identifier of the Sea-outlet. The the projection of the sf objects have to match.
+
+```{r read basin, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+basin_df <- basin_file %>% as.data.frame()
+
+#unique(basin_df$NAME) #returns the names of the river present in the database
+basinname <- "Tajo"
+basin_id <- unique(na.omit(basin_df[basin_df$NAME == basinname,]$WSO_ID)) #WSO_ID River Basin ID
+
+#Basin
+basn <- basin_file[basin_file$WSO_ID== basin_id, ] #SEAOUTLETS
+#Segments
+riv <- river_file[river_file$WSO_ID== basin_id,] #RIVERSEGMENTS
+#Nodes
+nodes <- confluences[confluences$WSO_ID== basin_id, ] #RIVERNODES
+
+#Match crs
+dam_in <- st_as_sf(amber, coords = c("Longitude_WGS84","Latitude_WGS84"))
+st_crs(dam_in) <- "+proj=longlat +datum=WGS84" 
+#Basin
+shape_basin <- st_transform(basn,st_crs(dam_in))
+#Segments
+shape_river <- st_transform(riv,st_crs(dam_in))
+#Confluences
+river_joins <- st_transform(nodes,st_crs(dam_in))#for elevation at node compare with segments!
+```
+## Data pre-processing
+
+# Subset dams 
+
+The selection of the dams to include in the network is at this point of the process not solved.
+Further work to this topic is in progress.
+A first subset of the Amber is created using a polygon of the area of the basin. 
+
+```{r intersect dam , message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+dam <- st_intersection(dam_in, st_buffer(shape_basin,1)) 
+```
+# Functions to support data processing
+
+In this approach with CCM2 as input data, the pre-processing can be accelerated and some steps can be left out. The functions for pre-processing have been adapted and must be loaded in the global environment.
+Functions in global environment: dam_snap_ccm, dam_include
+
+```{r source processing funs ,echo = FALSE}
+source("dam_snap_ccm.R")
+source("dam_include.R")
+source("edges_list.R")
+
+dam_include
+```
+
+# River shapefile preprocessing
+
+The attributes of the river segments the package is built on have different names than the CCM2 database.
+The number of accumulated cells (UP_CELLS in ECRINS) is a proxy of the upstream catchment area. This attribute is used in riverconn for the calculation of the index for each barrier (and for pruning of upstream segments in the pre-processing which will be left out).
+The equivalent attribute in CCM2 is CONT_PIXELS (Area upstream the From Node drained by the river segment in 100x100 grid cells).
+
+```{r pocess upstream area, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+shape_river$UP_CELLS = shape_river$CONT_PIXELS# 
+shape_river$alt = shape_river$ALT_GRADIENT# 
+st_geometry(shape_river) <- "geometry"
+```
+
+As a next step the shape an object of class ‘sf’ with ‘MULTILINESTRING’ geometry into and object of class ‘sf’ containing multiple ‘LINESTRING’ geometries. 
+
+
+```{r pocess network to access segments, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+shape_river_simple <- shape_river %>%
+  st_as_sf %>%
+  st_union()
+
+shape_river_line <- shape_river %>% st_cast(.,"LINESTRING" ) %>% 
+  mutate(EdgeID = as.character(1:nrow(.)))
+```
+
+# Dams pre-processing 
+
+The locations of the barriers in the AMBER dataset have some errors, furthermore the CCM2 database missing some river segments due to the resolution (100mx100m). To include the dams in the network the locations of the barriers have to overlap with the segments. This issue in not solved yet in a satisfactory manner. 
+Nevertheless the snapping function was adapted for further development.
+
+In addition, since the snapping for large networks with multiple dams can have a long running time a instruction to parallel the computation is presented here.
+
+The function dam_snap_ccm  is used to snap the barrier points to the river network based on a tolerance threshold (default 10). The function changes the location of the points to overlap with the river network.
+
+```{r dams snap parrallel, message = FALSE,echo=FALSE, width = 60, warning = FALSE}
+
+x <- dam %>% mutate(id = GUID) %>% dplyr::select(id) 
+
+#change to your R lib location and change to location of function 
+#.libPaths() #find lib path
+
+#setup parallel back-end to use many processors
+cores=detectCores()
+#print(cores)
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+registerDoParallel(cl)
+
+# Loop
+clusterEvalQ(cl, .libPaths("C:/Users/Nutzer/AppData/Local/R/win-library/4.2" )) #Change  here your R library path
+
+funpat <- "River_data/" #path of function to run parallel 
+#getwd()
+#dir.exists(funpat)
+
+output <- foreach(i=1:nrow(x), .combine = rbind, 
+                  .packages= c('dplyr', 'sf')) %dopar% {
+  source(paste0(funpat,"dam_snap_ccm.R")) # That is the main point. Source your Function File here.
+  temp <- dam_snap_ccm(x[i,],shape_river_line) # use your custom function after sourcing 
+  temp
+}
+
+stopCluster(cl)
+
+dams_snapped <- output
+
+```
+Only the barriers that overlap with the river network sf will be considered. In case two dams were snapped in the same geographic position duplicates will be removed. Passablity values are assigned to the obtained snapped points. Here, uniform (not dam-dependent) passabilities were assigned: 0.8 for downstream passability, and 0.1 for upstream passability. An id is assigned to each of the geographic points.
+
+```{r dams select, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+# Retain dams that were snapped
+dams_snapped_reduced <-
+  dams_snapped[st_contains(shape_river_simple %>% st_sf(), dams_snapped, prepared = FALSE)[[1]],]
+##dobblesnap
+dams_snapped_reduced_joined <- dams_snapped_reduced %>%
+  mutate(cluster =
+           st_equals(dams_snapped_reduced, dams_snapped_reduced) %>%
+           sapply(., FUN = function(x) paste0(x, collapse = "_"))) %>%
+  group_by(cluster) %>%
+  slice(1) %>%
+  ungroup() %>%
+  mutate(id_dam = as.character(1:nrow(.)), pass_u = 0.1, pass_d = 0.8) %>%
+  as.data.frame %>%  st_as_sf()
+```
+
+Finally the barriers and nodes (confluences) have to be combined in an object.
+
+```{r junction, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+# Create junction point shapefile
+network_links <- rbind(
+  dams_snapped_reduced_joined %>%
+    mutate(type = "dam", id_barrier = id_dam) %>%
+    dplyr::select(type, id_barrier, pass_u, pass_d),
+  river_joins %>%
+    dplyr::select(ID) %>%
+    mutate(pass_u = NA, pass_d = NA, type = "joint") %>%
+    rename(id_barrier = ID, geometry = SHAPE)) %>% ##enter here name of geometry column
+  mutate(id_links = 1:nrow(.))
+```
+
+## igraph creation
+
+To include the barriers in the network function 'dam_include' creates new segments if a barrier overlaps a segment. The old segment before the inclusion of the barrier will be removed and the new segments are provided with new unique identifiers (Edge_ID).
+
+```{r i slice, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+
+river_net_sliced <- dam_include(network_links, shape_river_line)
+
+```
+To calculate longitudinal river network connectivity with a graph based approach, the river segments are considered as nodes (vertices) and the connections in between, the barriers and confluences, as the edges of the graph network.
+The function 'edges_list' creates a dataframe of the edges. 
+
+```{r i slice and create, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+
+edgedf <-edges_list(network_links,river_net_sliced)
+
+vertices <- river_net_sliced %>%
+  st_drop_geometry %>%
+  rename(name = EdgeID) %>%
+  mutate(across(c(everything()), as.character))  %>% #, -geom
+  mutate(length = as.numeric(SHAPE_Length), alt = as.numeric(alt)) %>% dplyr::select(name, everything())%>%
+  mutate(Conname = as.character(1:nrow(.)))  #as.character
+
+river_graph <- graph_from_data_frame(
+  d = edgedf,
+  directed = TRUE,
+  v = vertices)
+
+```
+
+`river_graph` is an object of class `igraph`  that keeps the attributes present in the shapefile and in the junction.
+
+```{r igraph diagnostics, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+# Check igraph object
+river_graph
+# check river_graph edges
+igraph::get.edge.attribute(river_graph) %>% names
+# check river_graph vertices
+igraph::get.vertex.attribute(river_graph) %>% names
+```
