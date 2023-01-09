@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction
 
-This document is a guide to create an igraph object from CCM2 geodata to use with the riverconn package. The pre-processing is adapted for CCM2 data that have a higher resolution than the ECRINS database on which the riverconn package was developed. Due to the directionallity information contained in CCM2 the pre-processing could be accelerated.
+This document is a guide to create an igraph object from CCM2 geodata to use with the riverconn package. The pre-processing is adapted for CCM2 data which have a higher resolution than the ECRINS database on which the riverconn package was developed. Due to the directionallity information contained in CCM2 the pre-processing can be accelerated. 
 Further changes are made in the inclusion of barriers and the creation of the igraph object.  
 This guide is based on the Tutorial of Damiano Baldan [riverconn_tutorial](https://damianobaldan.github.io/riverconn_tutorial/)
 
@@ -43,7 +43,7 @@ library("foreach")
 library("doParallel")
 
 ```
-By using 'sf' objects and their ability to link geographic information to the data.frame structure, it is easy to edit the flow geometry.
+By using 'sf' objects and their ability to link geographic information to the data.frame structure, it is easy to edit the rivernetwork while keeping the geometry.
 
 # Data Input 
 
@@ -77,12 +77,13 @@ amber <- fread(amberpath)
 ```
 # Chose River Basin 
 
-To choose the River Basin you can either look for a name of a river (in this example river "Tajo") or directly use the WSO_ID as an unique identifier of the Sea-outlet. The the projection of the sf objects have to match.
+To choose the River Basin you can either look for a name of a river (in this example river "Tajo") or directly use the WSO_ID as an unique identifier of the Sea-outlet. 
 
 ```{r read basin, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 basin_df <- basin_file %>% as.data.frame()
 
 #unique(basin_df$NAME) #returns the names of the river present in the database
+
 basinname <- "Tajo"
 basin_id <- unique(na.omit(basin_df[basin_df$NAME == basinname,]$WSO_ID)) #WSO_ID River Basin ID
 
@@ -92,7 +93,11 @@ basn <- basin_file[basin_file$WSO_ID== basin_id, ] #SEAOUTLETS
 riv <- river_file[river_file$WSO_ID== basin_id,] #RIVERSEGMENTS
 #Nodes
 nodes <- confluences[confluences$WSO_ID== basin_id, ] #RIVERNODES
+```
 
+The projection of the sf objects have to match.
+
+```{r match crs, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 #Match crs
 dam_in <- st_as_sf(amber, coords = c("Longitude_WGS84","Latitude_WGS84"))
 st_crs(dam_in) <- "+proj=longlat +datum=WGS84" 
@@ -109,37 +114,40 @@ river_joins <- st_transform(nodes,st_crs(dam_in))#for elevation at node compare 
 
 The selection of the dams to include in the network is at this point of the process not solved.
 Further work to this topic is in progress.
-A first subset of the Amber is created using a polygon of the area of the basin. 
+
+A first subset of the barriers of the Amber dataset is created using the polygon of the  basinarea (with a buffer of 1 m). 
 
 ```{r intersect dam , message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 dam <- st_intersection(dam_in, st_buffer(shape_basin,1)) 
 ```
 # Functions to support data processing
 
-In this approach with CCM2 as input data, the pre-processing can be accelerated and some steps can be left out. The functions for pre-processing have been adapted and must be loaded in the global environment.
-Functions in global environment: dam_snap_ccm, dam_include
+The functions for pre-processing have been adapted and must be loaded in the global environment.
+Functions in global environment: dam_snap_ccm, dam_include, edges_list.R
 
-```{r source processing funs ,echo = FALSE}
-source("dam_snap_ccm.R")
-source("dam_include.R")
-source("edges_list.R")
+```{r source processing funs ,echo = TRUE}
+
+source("functions/dam_snap_ccm.R")
+source("functions/dam_include.R")
+source("functions/edges_list.R")
 
 dam_include
 ```
 
 # River shapefile preprocessing
 
-The attributes of the river segments the package is built on have different names than the CCM2 database.
-The number of accumulated cells (UP_CELLS in ECRINS) is a proxy of the upstream catchment area. This attribute is used in riverconn for the calculation of the index for each barrier (and for pruning of upstream segments in the pre-processing which will be left out).
+The attributes of the river segments the package is built on (ECRINS) have different names than the CCM2 database.
+The number of accumulated cells (UP_CELLS in ECRINS) is a proxy of the upstream catchment area. This attribute is used in riverconn for the calculation of the index for each barrier (and for pruning of upstream segments in the pre-processing which will be left out here).
 The equivalent attribute in CCM2 is CONT_PIXELS (Area upstream the From Node drained by the river segment in 100x100 grid cells).
 
 ```{r pocess upstream area, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
-shape_river$UP_CELLS = shape_river$CONT_PIXELS# 
-shape_river$alt = shape_river$ALT_GRADIENT# 
+#rename attributes
+shape_river$UP_CELLS = shape_river$CONT_PIXELS 
+shape_river$alt = shape_river$ALT_GRADIENT 
 st_geometry(shape_river) <- "geometry"
 ```
 
-As a next step the shape an object of class ‘sf’ with ‘MULTILINESTRING’ geometry into and object of class ‘sf’ containing multiple ‘LINESTRING’ geometries. 
+As a next step transform the object of class ‘sf’ with ‘MULTILINESTRING’ geometry into an object of class ‘sf’ containing multiple ‘LINESTRING’ geometries. 
 
 
 ```{r pocess network to access segments, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
@@ -153,12 +161,14 @@ shape_river_line <- shape_river %>% st_cast(.,"LINESTRING" ) %>%
 
 # Dams pre-processing 
 
-The locations of the barriers in the AMBER dataset have some errors, furthermore the CCM2 database missing some river segments due to the resolution (100mx100m). To include the dams in the network the locations of the barriers have to overlap with the segments. This issue in not solved yet in a satisfactory manner. 
+The locations of the barriers in the AMBER dataset have some errors, furthermore the CCM2 database missing some river segments due to the resolution (100m). To include the dams in the network the locations of the barriers have to overlap with the segments. This issue in not solved yet in a satisfactory manner. 
 Nevertheless the snapping function was adapted for further development.
 
 In addition, since the snapping for large networks with multiple dams can have a long running time a instruction to parallel the computation is presented here.
 
-The function dam_snap_ccm  is used to snap the barrier points to the river network based on a tolerance threshold (default 10). The function changes the location of the points to overlap with the river network.
+The function dam_snap_ccm  is used to snap the barrier points to the river network based on a tolerance threshold (default 10). The function changes the location of the points in distance of the threshodl to overlap with the river network.
+
+To parallelise the snapping change libPath to the path of your R library and change 'funpath' to the directory of the function 'dam_snap_ccm'.
 
 ```{r dams snap parrallel, message = FALSE,echo=FALSE, width = 60, warning = FALSE}
 
@@ -174,11 +184,11 @@ cl <- makeCluster(cores[1]-1) #not to overload your computer
 registerDoParallel(cl)
 
 # Loop
-clusterEvalQ(cl, .libPaths("C:/Users/Nutzer/AppData/Local/R/win-library/4.2" )) #Change  here your R library path
+clusterEvalQ(cl, .libPaths("C:/Users/Vicky/AppData/Local/R/win-library/4.2" )) #Change  here your R library path
 
-funpat <- "River_data/" #path of function to run parallel 
+funpat <- "functions/" #path of function to run parallel 
 #getwd()
-#dir.exists(funpat)
+dir.exists(funpat)
 
 output <- foreach(i=1:nrow(x), .combine = rbind, 
                   .packages= c('dplyr', 'sf')) %dopar% {
@@ -192,12 +202,13 @@ stopCluster(cl)
 dams_snapped <- output
 
 ```
-Only the barriers that overlap with the river network sf will be considered. In case two dams were snapped in the same geographic position duplicates will be removed. Passablity values are assigned to the obtained snapped points. Here, uniform (not dam-dependent) passabilities were assigned: 0.8 for downstream passability, and 0.1 for upstream passability. An id is assigned to each of the geographic points.
+The barriers that overlap with the river network sf will be considered. In case two dams were snapped to the same geographic position, duplicates will be removed. Passablity values are assigned to the obtained snapped points. Here, uniform (not dam-dependent) passabilities were assigned: 0.8 for downstream passability, and 0.1 for upstream passability. An id is assigned to each of the geographic points.
 
 ```{r dams select, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 # Retain dams that were snapped
 dams_snapped_reduced <-
   dams_snapped[st_contains(shape_river_simple %>% st_sf(), dams_snapped, prepared = FALSE)[[1]],]
+
 ##dobblesnap
 dams_snapped_reduced_joined <- dams_snapped_reduced %>%
   mutate(cluster =
@@ -210,7 +221,7 @@ dams_snapped_reduced_joined <- dams_snapped_reduced %>%
   as.data.frame %>%  st_as_sf()
 ```
 
-Finally the barriers and nodes (confluences) have to be combined in an object.
+Finally the barriers and confluences (river_joins) will be combined in an object.
 
 ```{r junction, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 # Create junction point shapefile
@@ -224,8 +235,20 @@ network_links <- rbind(
     rename(id_barrier = ID, geometry = SHAPE)) %>% ##enter here name of geometry column
   mutate(id_links = 1:nrow(.))
 ```
+A plot can reveal if the process was successful.
+```{r plot in, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+ggplot() +
+  coord_fixed() +
+  ggspatial::layer_spatial(shape_river_line, color = "gray70")+
+  ggspatial::layer_spatial(network_links, aes(shape = type))+
+  scale_shape_manual(name = "Splitting points", values=c("dam" =17))+ #,"joint" = 23
+  theme_minimal() +
+  theme(legend.position = "bottom")+
+  ggspatial::annotation_north_arrow(location = "br")+
+  ggspatial::annotation_scale(location = "bl", style = "ticks")
+```
 
-## igraph creation
+# `igraph` creation
 
 To include the barriers in the network function 'dam_include' creates new segments if a barrier overlaps a segment. The old segment before the inclusion of the barrier will be removed and the new segments are provided with new unique identifiers (Edge_ID).
 
@@ -234,11 +257,24 @@ To include the barriers in the network function 'dam_include' creates new segmen
 river_net_sliced <- dam_include(network_links, shape_river_line)
 
 ```
+Plotting can show weird behaviors of the join operation.
+```{r plot weird, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+ggplot() +
+  coord_fixed() +
+  ggspatial::layer_spatial(river_net_sliced, aes(color = alt))+
+  scale_color_viridis(name = "Elevation")+
+  theme_minimal() +
+  theme(legend.position = "bottom")+
+  ggspatial::annotation_north_arrow(location = "br")+
+  ggspatial::annotation_scale(location = "bl", style = "ticks")
+
+
+```
+
 To calculate longitudinal river network connectivity with a graph based approach, the river segments are considered as nodes (vertices) and the connections in between, the barriers and confluences, as the edges of the graph network.
 The function 'edges_list' creates a dataframe of the edges. 
 
 ```{r i slice and create, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
-
 edgedf <-edges_list(network_links,river_net_sliced)
 
 vertices <- river_net_sliced %>%
@@ -264,4 +300,179 @@ river_graph
 igraph::get.edge.attribute(river_graph) %>% names
 # check river_graph vertices
 igraph::get.vertex.attribute(river_graph) %>% names
+```
+
+# Editing the `igraph` object
+The edges and vertices attributes can be further edited.The  ‘length’ vertices attributes is expressed in meters. The value is changed to tens of kilometers for the following calculations. Some fields with habitat suitability information will be added. Two different habitat curves are implemented to link elevation and habitat preference, one for high-altitude organisms and one for low-altitude organisms. Relative reach-specific habitat suitability indices (HSI) are added as attributes of the vertices. Weighted usable length (WUL) is also calculated as the product of length and HSI as the reach-specific fraction of length that is available for organisms.
+
+```{r igraph attributes, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+#subset attributes
+g2 = river_graph
+l = c("MAINDRAIN_ID","LENGTH","CUM_LEN","PIXELS_100M","CATCHMENT_AREA","CONT_PIXELS","DRAIN_KM2","BURNED","CONFIDENCE","WINDOW" , "SHAPE_Length"  )
+
+#remove obsolete attributes
+for (i in l){
+  g2<-delete_vertex_attr(g2, i)
+}
+
+river_graph<-g2
+
+
+# update length attribute
+V(river_graph)$length <- V(river_graph)$length / 10000
+hist(V(river_graph)$length)
+
+# Function for organism that prefers high elevation
+suit_fun_high <- function(x){dnorm(x, mean = 1500, sd = 500)*410*sqrt(3*pi)}
+# Function for organism that prefers low elevation
+suit_fun_low <- function(x){exp(- 0.001*x)}
+# Calculate HSI for the igraph nodes
+V(river_graph)$HSI_low <- suit_fun_low(V(river_graph)$alt)
+V(river_graph)$HSI_high <- suit_fun_high(V(river_graph)$alt)
+# Calculate weighted usable length for igraph nodes
+V(river_graph)$WUL_low <- V(river_graph)$HSI_low * V(river_graph)$length
+V(river_graph)$WUL_high <- V(river_graph)$HSI_high * V(river_graph)$length
+```
+
+Now the indices can be calculated using the function 'index_calculation' of the riverconn package.
+
+```{r index calculation , message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+# Initialize list where to store all the index calculation outputs
+index <- list()
+lab_index <- list()
+letter_index <- list()
+
+##Correct graph attributes!
+# 1: Symmetric Dendritic Connectivity Index (no biotic effects)
+lab_index[[1]] <- "Symmetric DCI"
+letter_index[[1]] <- "A"
+index[[1]] <- index_calculation(graph = river_graph,
+                                weight = "length",
+                                B_ij_flag = FALSE,
+                                index_type = "reach",
+                                index_mode = "from")
+
+# 2: Asymmetric Dendritic Connectivity Index (no biotic effects)
+lab_index[[2]] <- "Asymmetric DCI"
+letter_index[[2]] <- "B"
+index[[2]] <- index_calculation(graph = river_graph,
+                                weight = "length",
+                                B_ij_flag = FALSE,
+                                dir_fragmentation_type = "asymmetric",
+                                index_type = "reach",
+                                index_mode = "from")
+
+## Before calculating IIC a binary passability has to be defined
+E(river_graph)$pass_u_bin <- ifelse(is.na(E(river_graph)$pass_u), NA, 0)
+E(river_graph)$pass_d_bin <- ifelse(is.na(E(river_graph)$pass_d), NA, 0)
+
+# 3: Symmetric Integral Index of Connectivity
+lab_index[[3]] <- "IIC"
+letter_index[[3]] <- "C"
+index[[3]] <- index_calculation(graph = river_graph,
+                                weight = "length",
+                                pass_u = "pass_u_bin",
+                                pass_d = "pass_d_bin",
+                                param = 3,
+                                disp_type = "threshold",
+                                index_type = "reach",
+                                index_mode = "from")
+
+## Defining uniform weights for IIC
+V(river_graph)$unif_w <- 1
+
+# 4: Integral Index of Connectivity with uniform weights
+lab_index[[4]] <- "IIC with uniform weights"
+letter_index[[4]] <- "D"
+index[[4]] <- index_calculation(graph = river_graph,
+                                weight = "unif_w",
+                                dir_fragmentation_type = "asymmetric",
+                                pass_u = "pass_u_bin",
+                                pass_d = "pass_d_bin",
+                                param = 3,
+                                disp_type = "threshold",
+                                index_type = "reach",
+                                index_mode = "from")
+
+# 5: Population Connectivity Index for lowland fish
+lab_index[[5]] <- "PCI lowland fish"
+letter_index[[5]] <- "E"
+index[[5]] <- index_calculation(graph = river_graph,
+                                weight = "WUL_low",   ## weighted usable length
+                                param = 0.8,
+                                index_type = "reach",
+                                index_mode = "from") 
+
+# 6: Population Connectivity Index for upland fish
+lab_index[[6]] <- "PCI upland fish"
+letter_index[[6]] <- "F"
+index[[6]] <- index_calculation(graph = river_graph,
+                                weight = "WUL_high", 
+                                param = 0.8,
+                                index_type = "reach",
+                                index_mode = "from") 
+
+
+# 7: Population Connectivity Index for lowland passive drifter
+## note that units of param_d must be consistent with length field (10s of km)
+lab_index[[7]] <- "PCI lowland passive"
+letter_index[[7]] <- "G"
+index[[7]] <- index_calculation(graph = river_graph,
+                                weight = "WUL_low", 
+                                dir_distance_type  = "asymmetric",
+                                disp_type = "threshold", 
+                                param_u = 0, 
+                                param_d = 3,
+                                index_type = "reach",
+                                index_mode = "from")
+
+# 8: Population Connectivity Index for upland passive drifter
+## note that units of param_d must be consistent with length field (10s of km)
+lab_index[[8]] <- "PCI upland passive"
+letter_index[[8]] <- "H"
+index[[8]] <- index_calculation(graph = river_graph,
+                                weight = "WUL_high", 
+                                dir_distance_type  = "asymmetric",
+                                disp_type = "threshold",
+                                param_u = 0, 
+                                param_d = 3,
+                                index_type = "reach",
+                                index_mode = "from")
+
+
+# Initialize empty list
+plot_list <- list()
+
+# iterate through list length
+for (i in 1:length(index)) {
+  
+  # Join d_i information with dams shapefile
+  river_plot <- river_net_sliced %>%
+    mutate(name = as.character(EdgeID)) %>%
+    left_join(index[[i]]) %>%
+    mutate(rank = rank(desc(index)))
+  
+  # plot
+  plot_iter <- ggplot() +
+    coord_fixed() +
+    ggspatial::layer_spatial(river_plot, aes(color = rank))+
+    scale_color_viridis(name = "Ranking", direction = -1)+
+    theme_void()+
+    guides(size = FALSE) +
+    theme(legend.position = "bottom")+
+    ggtitle(paste0(letter_index[[i]], ") ", lab_index[[i]]))
+  
+  legend <- cowplot::get_legend(plot_iter)
+  
+  plot_list[[i]] <- plot_iter + 
+    theme(legend.position = "none")
+  
+}
+
+plot_list[[length(index)+1]] <- legend
+
+plot_final <- ggpubr::ggarrange( plotlist = plot_list)
+plot_final
+
+
 ```
