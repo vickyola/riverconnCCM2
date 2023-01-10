@@ -23,6 +23,9 @@ library("rgeos")
 #for parallel
 library("foreach")
 library("doParallel")
+library("sfnetworks")
+remotes::install_github("luukvdmeer/sfnetworks")
+
 
 #check packages list.functions.in.file() 
 
@@ -37,31 +40,27 @@ library("doParallel")
 ##################################################################################
 #INPUT (change to your Location of input)
 
-window <- "2004"
-path <- paste0("C:/Users/Nutzer/Documents/phd/dammedfish/River_data/CCM/CCM21_LAEA_window",window,"/ccm21/") 
+#window <- "2004"
+#path <- paste0("C:/Users/Nutzer/Documents/phd/dammedfish/River_data/CCM/CCM21_LAEA_window",window,"/ccm21/") 
+#C:\Users\Vicky\Documents\phd\CCM2
+path <- paste0("C:/Users/Vicky/Documents/phd/CCM2/") 
+dbname <- "WGS84_W2003.gdb"
+#dbname <- paste0("LAEA_W",window,".gdb") 
 
-#path <- paste0("C:/Users/Nutzer/Documents/phd/dammedfish/River_data/CCM/CCM21_WGS84_RiverBasins/ccm21/") 
-#dbname <- "WGS84_RiverBasins.gdb"
-#C:\Users\Nutzer\Documents\phd\dammedfish\River_data\CCM\CCM21_WGS84_RiverBasins
-##C:\Users\Nutzer\Documents\phd\dammedfish\River_data\CCM
-
-dbname <- paste0("LAEA_W",window,".gdb") 
 dir.exists(paste0(path,dbname)) #check path
-ogrListLayers(paste0(path,dbname))
+#ogrListLayers(paste0(path,dbname))
 
 seaout <- st_read(paste0(path,dbname), layer = "SEAOUTLETS" )
 segments  <- st_read(paste0(path,dbname), layer = "RIVERSEGMENTS" )
 node <- st_read(paste0(path,dbname), layer = "RIVERNODES" )
 #cat <- st_read(paste0(path,dbname), layer = "CATCHMENTS" )
-#length(unique(segments$NEXTDOWNID             ))
-#any(segments$NEXTDOWNID %in%segments$NEXTDOWNID )
-
 
 #Barriers
-ambercsv <- "C:/Users/Nutzer/Documents/phd/dammedfish/River_data/AMBER/atlas.csv"
-file.exists(ambercsv) #check path
+#amberpath <- "C:/Users/Nutzer/Documents/phd/dammedfish/River_data/AMBER/atlas.csv"
+amberpath <-  "C:/Users/Vicky/Documents/phd/Amber/atlas.csv"
+#file.exists(amberpath) #check path
 
-amber <- fread(ambercsv)
+amber <- fread(amberpath)
 dam_in <- st_as_sf(amber, coords = c("Longitude_WGS84","Latitude_WGS84"))
 st_crs(dam_in) <- "+proj=longlat +datum=WGS84"
 
@@ -75,7 +74,7 @@ seaout_df <- seaout %>% as.data.frame()
 ##in some cases there where no segments/basins to the WSO_ID of Rivers (Rivers with no Seaoutlet?)
 ##Example "Oude Rijn" in 2003
 unique(seaout_df$NAME)
-basinname <- "Tajo"
+basinname <- "Seudre"
 basin_id <- unique(na.omit(seaout_df[seaout_df$NAME == basinname,]$WSO_ID)) #WSO_ID River Basin ID
 
 #alternative with unique Basin identifier WSO_ID
@@ -105,108 +104,92 @@ river_joins <- st_transform(nodes,st_crs(dam_in))#for elevation at node compare 
 dam <- st_intersection(dam_in, st_buffer(shape_basin,1)) #crop dams with basin and a buffer of 1
 
 # ##plot input
-#  plot(st_geometry(shape_basin))
-#  plot(st_geometry(shape_river),add =TRUE)
-#  plot(st_geometry(river_joins),add =TRUE, col="red")
-#  plot(st_geometry(dam),add =TRUE, col="green")
+plot(st_geometry(shape_basin))
+plot(st_geometry(shape_river),add =TRUE)
+plot(st_geometry(river_joins),add =TRUE, col="red")
+plot(st_geometry(dam),add =TRUE, col="green")
 
 #2.1 Shapefile Preprocessing  ##kann man kürzen
 ##################################################################################
-#Segments (rename attributes for riverconn)
+#rename attributes
 shape_river$UP_CELLS = shape_river$CONT_PIXELS# UP_CELLS The number of accumulated cells is a proxy of the upstream catchment area. 
 #CONT_PIXELS Area upstream the From Node drained by the river segment in 100x100 grid cells
+shape_river$alt = shape_river$ALT_GRADIENT 
+st_geometry(shape_river) <- "geometry"
 
 shape_river_simple <- shape_river %>%
   st_as_sf %>%
   st_union()
-str(shape_river_simple)
 
 shape_river_line <- shape_river %>% st_cast(.,"LINESTRING" ) %>% 
-  mutate(id = 1:nrow(.))
-str(shape_river_line)
+  mutate(id = WSO1_ID)  # 1:nrow(.)
 
 #2.3 Dams preprocessing  ##TODO kürzen
 ##################################################################################
 #dams
 dams_to_points <- dam %>% mutate(id = GUID) %>% dplyr::select(id) 
-# dams_to_points <- dam %>%
-#   st_as_sf %>%
-#   st_centroid %>%
-#   mutate(id = GUID)%>%
-#   dplyr::select(id) %>%
-#   st_transform(crs = "+proj=longlat +datum=WGS84")
-
-# Snap dams 
-##centroid is not middlepoint!!!!
-
-#st_segmentize 
+ 
 x <-dams_to_points
 
-#snap function (outsorced for parallel)
+#################################################################################
+
 dam_snap_ccm<-  function(dams, rivershape, max_dist = 10) {
+  # 
+  #
+  max_dist=90
+   i= 15
+   dams <- x[i,]
+   rivershape <- shape_river_line
+  
   dams <- dams
   lines <- rivershape %>% st_as_sf()
   nf <- lines[st_nearest_feature(dams, lines), ]
-  if ( as.numeric(st_distance(dams, nf)) < max_dist) {
-    nf.points <- nf  %>%  st_as_sf %>%   st_cast("POINT")
-    nf.points.min <- nf.points[ which.min(st_distance(nf.points,dams)),]
-    st_geometry(dams) <- st_geometry(nf.points.min)
-    dams <- st_as_sf(dams)
-  }
-  return(dams)
-}
-##################################################################################
-#HIER WEITER
-#hier test better snap
-dam_snap_ccm<-  function(dams, rivershape, max_dist = 10) {
-  #test
-  max_dist <- 1500
-  i <-36  #237
-  dams <- x[i,]
-  rivershape <- shape_river_line
-  
-  dams <- dams %>%  st_as_sf %>%   st_cast("POINT")
-  lines <- rivershape %>% st_as_sf()
-  
-  
-  nf <- lines[st_nearest_feature(dams, lines), ]
+  #str(nf)
   plot(st_geometry(nf))
   
+  startnf = st_startpoint (nf)
+  endnf = st_endpoint (nf)
   
-  plot(st_geometry(dams), add =TRUE, col= "chocolate",  pch = 19)
+  plot(st_geometry(endnf),add=TRUE, col="green")
+  plot(st_geometry(startnf),add=TRUE, col="pink")
   
+  plot(st_geometry(dams),add=TRUE, col="blue")
+
   if ( as.numeric(st_distance(dams, nf)) < max_dist) {
-    #nearest node
     nf.points <- nf  %>%  st_as_sf %>%   st_cast("POINT")
     nf.lines <- nf  %>%  st_as_sf %>%   st_cast("LINESTRING")
-    str(st_geometry(nf.lines))
+
+     nf.lines <- nf  %>%  st_as_sf %>%   st_cast("LINESTRING")
+     nf.segments <- nf.lines %>% st_segmentize( max_dist) %>%   st_cast("POINT")
+     nf.segments_min <- nf.segments[ which.min(st_distance(nf.segments,dams)),]
+     plot(st_geometry(nf.segments_min),add=TRUE, col="grey",pch =9)
+     st_geometry(dams) <- st_geometry(nf.segments_min)
+     
+     
+     buff <- st_buffer(dams,20)  %>%  st_as_sf
+
+     nf.splits <- st_split(nf.lines, buff) %>%  st_cast()%>% 
+       mutate(LENGTH= as.integer( st_length(.))) %>%  subset(. , LENGTH > 50 )
+  str(nf.splits)
+     plot(st_geometry(nf.splits),add=TRUE, col="yellow")
+     plot(st_geometry(st_startpoint(nf.splits[1,])),add=TRUE, col="green")
+     plot(st_geometry(st_endpoint(nf.splits[1,])),add=TRUE, col="pink")
+     
+
+     # st_geometry(dams) <- st_geometry(nf.segments_min)
+    #plot(st_geometry(nf.segments_min),add=TRUE, col="red")
     
-    msc <-(st_geometry(nf.lines))
-    msc[1]
     
     
-    plot(st_geometry(nf.points), add =TRUE, col= "blue",  pch = 8)
-    plot(st_geometry(nf.lines), add =TRUE, col= "green",  pch = 8)
     
-    #nearest point
-    dams_p <- st_nearest_points(dams, nf)%>%   st_cast("POINT") %>%  st_as_sf
-    dams_p <- dams_p[which.min(st_distance(nf,dams_p)),]
-    
-    plot(st_geometry(dams_p), add =TRUE, col= "blue",  pch = 19)
-    
-    nf.points.min <- nf.points[ which.min(st_distance(nf.points,dams)),]
-    st_geometry(dams) <- st_geometry(nf.points.min)
     dams <- st_as_sf(dams)
-    
-    plot(st_geometry(dams), add =TRUE, col= "red",  pch = 19)
   }
-  
   return(dams)
 }
 
 ##################################################################################
 #Speed up by parrallel processing
-#change to your R lib location and change to location of function (snap function extern!)
+#change to your R lib location and change to location of function (snap function outsorced!)
 .libPaths() #find lib path
 #setup parallel backend to use many processors
 cores=detectCores()
@@ -215,22 +198,25 @@ cl <- makeCluster(cores[1]-1) #not to overload your computer
 registerDoParallel(cl)
 
 # Loop
-clusterEvalQ(cl, .libPaths("C:/Users/Nutzer/AppData/Local/R/win-library/4.2" )) #Change  here your R library path
+#clusterEvalQ(cl, .libPaths("C:/Users/Nutzer/AppData/Local/R/win-library/4.2" )) #Change  here your R library path
+clusterEvalQ(cl, .libPaths("C:/Users/Vicky/AppData/Local/R/win-library/4.2" )) #Change  here your R library path
 
-funpat <- "C:/Users/Nutzer/Documents/phd/dammedfish/River_data/" #path of function to run parallel 
+funpat <- "functions/" #path of function to run parallel 
+
 #dir.exists(funpat)
+#file.exists(paste0(funpat,"dam_snap_ccm.R"))
 
 output <- foreach(i=1:nrow(x), .combine = rbind, 
                   .packages= c('dplyr', 'sf')) %dopar% {
   source(paste0(funpat,"dam_snap_ccm.R")) # That is the main point. Source your Function File here.
-  temp <- dam_snap_ccm(x[i,],shape_river_line) # use your custom function after sourcing 
+  temp <- dam_snap_ccm(x[i,],shape_river_line,max_dist= 90) # use your custom function after sourcing 
   temp
 }
 
 stopCluster(cl)
 
 dams_snapped <- output
-
+#str(dams_snapped)
 ##################################################################################
 # #no parallel
 # snapped <- list()
@@ -242,11 +228,16 @@ dams_snapped <- output
 ##################################################################################
 
 plot(st_geometry(shape_river_line))
-plot(st_geometry(dams_snapped),add =TRUE, col= "red")
+plot(st_geometry(x),add =TRUE, col= "red")
+plot(st_geometry(dams_snapped),add =TRUE, col= "green")
+
 
 # Retain dams that were snapped
 dams_snapped_reduced <-
   dams_snapped[st_contains(shape_river_simple %>% st_sf(), dams_snapped, prepared = FALSE)[[1]],]
+
+str(dams_snapped_reduced)
+
 plot(st_geometry(dams_snapped_reduced),add =TRUE, col= "blue")
 
 #check:

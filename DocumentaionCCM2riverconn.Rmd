@@ -155,8 +155,9 @@ shape_river_simple <- shape_river %>%
   st_as_sf %>%
   st_union()
 
+
 shape_river_line <- shape_river %>% st_cast(.,"LINESTRING" ) %>% 
-  mutate(EdgeID = as.character(1:nrow(.)))
+  mutate(EdgeID = as.character(1:nrow(.)))  ##id = WSO1_ID  ##CHANGE and test!
 ```
 
 # Dams pre-processing 
