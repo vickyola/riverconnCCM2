@@ -59,8 +59,10 @@ For the import of the barriers set amberpath to the path of the csv file with th
 ```{r read shapes , message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 #Segments and Confluences
 window <- "2004"
-dbname <- paste0("LAEA_W",window,".gdb") 
-path <- paste0("River_data/CCM/CCM21_LAEA_window",window,"/ccm21/") 
+#dbname <- paste0("LAEA_W",window,".gdb") 
+#path <- paste0("River_data/CCM/CCM21_LAEA_window",window,"/ccm21/") 
+path <- paste0("C:/Users/Vicky/Documents/phd/CCM2/") 
+dbname <- paste0("WGS84_W",window,".gdb")
 
 #ogrListLayers(paste0(path,dbname)) #List the Layers of the db 
 options(knitr.duplicate.label = "allow")
@@ -70,7 +72,8 @@ river_file  <- st_read(paste0(path,dbname), layer = "RIVERSEGMENTS" )
 confluences <- st_read(paste0(path,dbname), layer = "RIVERNODES" )
 
 #Barriers
-amberpath <- "River_data/AMBER/atlas.csv" 
+#amberpath <- "River_data/AMBER/atlas.csv" 
+amberpath <- "C:/Users/Vicky/Documents/phd/Amber/atlas.csv"  
 
 amber <- fread(amberpath)
 
@@ -131,7 +134,7 @@ source("functions/dam_snap_ccm.R")
 source("functions/dam_include.R")
 source("functions/edges_list.R")
 
-dam_include
+
 ```
 
 # River shapefile preprocessing

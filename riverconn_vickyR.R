@@ -24,8 +24,12 @@ library("rgeos")
 library("foreach")
 library("doParallel")
 library("sfnetworks")
-remotes::install_github("luukvdmeer/sfnetworks")
 
+
+library("nngeo")
+
+#remotes::install_github("luukvdmeer/sfnetworks")
+#remotes::install_github("michaeldorman/nngeo")
 
 #check packages list.functions.in.file() 
 
@@ -107,7 +111,7 @@ dam <- st_intersection(dam_in, st_buffer(shape_basin,1)) #crop dams with basin a
 plot(st_geometry(shape_basin))
 plot(st_geometry(shape_river),add =TRUE)
 plot(st_geometry(river_joins),add =TRUE, col="red")
-plot(st_geometry(dam),add =TRUE, col="green")
+plot(st_geometry(dam),add =TRUE, col="green" , pch =19)
 
 #2.1 Shapefile Preprocessing  ##kann man kürzen
 ##################################################################################
@@ -136,16 +140,19 @@ x <-dams_to_points
 dam_snap_ccm<-  function(dams, rivershape, max_dist = 10) {
   # 
   #
-  max_dist=90
-   i= 15
+  max_dist=9000
+   i= 2
    dams <- x[i,]
+   #str(dams)
    rivershape <- shape_river_line
   
-  dams <- dams
+  #dams <- dams
   lines <- rivershape %>% st_as_sf()
   nf <- lines[st_nearest_feature(dams, lines), ]
-  #str(nf)
+  
+  
   plot(st_geometry(nf))
+  plot(st_geometry(dams), col="red", pch =19, add=TRUE)
   
   startnf = st_startpoint (nf)
   endnf = st_endpoint (nf)
@@ -153,27 +160,39 @@ dam_snap_ccm<-  function(dams, rivershape, max_dist = 10) {
   plot(st_geometry(endnf),add=TRUE, col="green")
   plot(st_geometry(startnf),add=TRUE, col="pink")
   
-  plot(st_geometry(dams),add=TRUE, col="blue")
 
   if ( as.numeric(st_distance(dams, nf)) < max_dist) {
     nf.points <- nf  %>%  st_as_sf %>%   st_cast("POINT")
     nf.lines <- nf  %>%  st_as_sf %>%   st_cast("LINESTRING")
+    
+    
+    dams_p <- st_nearest_points(dams, nf)%>%   st_cast("POINT") %>%  st_as_sf
+    dams_p <- dams_p[which.min(st_distance(nf,dams_p)),]
+    
+    str(dams_p)
+    plot(st_geometry(dams_p), col="cyan", pch =19, add=TRUE)
 
-     nf.lines <- nf  %>%  st_as_sf %>%   st_cast("LINESTRING")
-     nf.segments <- nf.lines %>% st_segmentize( max_dist) %>%   st_cast("POINT")
-     nf.segments_min <- nf.segments[ which.min(st_distance(nf.segments,dams)),]
-     plot(st_geometry(nf.segments_min),add=TRUE, col="grey",pch =9)
-     st_geometry(dams) <- st_geometry(nf.segments_min)
+     st_geometry(dams) <- st_geometry(dams_p)
+     plot(st_geometry(dams), col="blue", pch =19, add=TRUE)
      
+     buff <- st_buffer(dams,50)  %>%  st_as_sf
+     plot(st_geometry(buff), col="yellow", pch =19,add=TRUE)
      
-     buff <- st_buffer(dams,20)  %>%  st_as_sf
+    #integrate dam in segment as node
+     nf.splits <- st_split(nf, buff) %>%  st_cast() %>% mutate(LENGTH= as.integer( st_length(.))) %>%  subset(. , LENGTH > 110 )
+     str(nf.splits)
+     str(st_combine(nf.splits))
+     
+     plot(st_geometry(nf.splits),add=TRUE, col="cyan")
+     plot(st_geometry((nf.splits[1,])),add=TRUE, col="green")
+     plot(st_geometry((nf.splits[2,])),add=TRUE, col="deeppink")
+     
+     connected <- st_connect(damsnf.splits[1,])
+     str(connected)
+     plot((connected),add=TRUE, col="coral")
+     
+  #str(nf.splits)
 
-     nf.splits <- st_split(nf.lines, buff) %>%  st_cast()%>% 
-       mutate(LENGTH= as.integer( st_length(.))) %>%  subset(. , LENGTH > 50 )
-  str(nf.splits)
-     plot(st_geometry(nf.splits),add=TRUE, col="yellow")
-     plot(st_geometry(st_startpoint(nf.splits[1,])),add=TRUE, col="green")
-     plot(st_geometry(st_endpoint(nf.splits[1,])),add=TRUE, col="pink")
      
 
      # st_geometry(dams) <- st_geometry(nf.segments_min)
