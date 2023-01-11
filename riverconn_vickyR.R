@@ -48,7 +48,7 @@ library("nngeo")
 #path <- paste0("C:/Users/Nutzer/Documents/phd/dammedfish/River_data/CCM/CCM21_LAEA_window",window,"/ccm21/") 
 #C:\Users\Vicky\Documents\phd\CCM2
 path <- paste0("C:/Users/Vicky/Documents/phd/CCM2/") 
-dbname <- "WGS84_W2003.gdb"
+dbname <- "WGS84_W2004.gdb"
 #dbname <- paste0("LAEA_W",window,".gdb") 
 
 dir.exists(paste0(path,dbname)) #check path
@@ -78,9 +78,13 @@ seaout_df <- seaout %>% as.data.frame()
 ##in some cases there where no segments/basins to the WSO_ID of Rivers (Rivers with no Seaoutlet?)
 ##Example "Oude Rijn" in 2003
 unique(seaout_df$NAME)
+
 basinname <- "Seudre"
 basin_id <- unique(na.omit(seaout_df[seaout_df$NAME == basinname,]$WSO_ID)) #WSO_ID River Basin ID
+unique(seaout_df$WSO_ID)
 
+basin_id <- 446813
+basin_id %in% seaout_df$WSO_ID
 #alternative with unique Basin identifier WSO_ID
 #for all WSO_IDs
 #basin_id <- seaout_df$WSO_ID[642]
@@ -287,14 +291,20 @@ network_links <- rbind(
     mutate(pass_u = NA, pass_d = NA, type = "joint") %>%
     rename(id_barrier = ID, geometry = SHAPE)) %>% ##enter here name of geometry column
   mutate(id_links = 1:nrow(.))
+
+#nodams 
+network_links <-  river_joins %>%
+    dplyr::select(ID) %>% mutate(pass_u = NA, pass_d = NA, type = "joint") %>%
+    rename(id_barrier = ID, geometry = SHAPE) %>% ##enter here name of geometry column
+  mutate(id_links = 1:nrow(.))
 str(network_links)
 
 #2.5 Adding additional attributes and rename geometry column if necessary 
 ##################################################################################
 # #Elevation
 ##alt = ALT_GRADIENT
-river_net_simplified <- shape_river_line %>% 
-  rename(alt = ALT_GRADIENT, geometry = SHAPE)  %>%
+str(shape_river_line)
+river_net_simplified <- shape_river_line  %>%
   mutate(EdgeID = as.character(1:nrow(.)))  #as.character
 
 #plot(st_geometry(river_net_simplified))
@@ -379,6 +389,12 @@ edges_list<- function(networklinks,rivernetwork){
 
 river_net_sliced <- dam_include(network_links, river_net_simplified)
 edgedf <-edges_list(network_links,river_net_sliced)
+
+
+edgedf <-edges_list(network_links,river_net_simplified) #nodams
+plot(st_geometry(river_net_simplified))
+river_net_sliced <- river_net_simplified
+
 #str(river_net_sliced)
 
 vertices <- river_net_sliced %>%
@@ -457,8 +473,8 @@ river_graph<-g2
 hist(V(river_graph)$length)##TODO checken welche length
 
 ##save graph 
-savepath <-"C:/Users/Nutzer/Documents/phd/dammedfish/River_data/CCM_Vicky/"
-write_graph(river_graph, paste0(savepath,basinname,"_igraph.txt"))
+#savepath <-"C:/Users/Nutzer/Documents/phd/dammedfish/River_data/CCM_Vicky/"
+#write_graph(river_graph, paste0(savepath,basinname,"_igraph.txt"))
 
 #Habitat suitability
 
@@ -619,10 +635,10 @@ fro_to<- confldf[,1:2]
 fro_to$pascom <- confldf$pass_u * confldf$pass_d 
 head(fro_to)
 
-names(vertices)
-head(vertices)
 #where are the names!!????
 verts <- vertices %>%  dplyr::select(Conname, LENGTH) %>%  as.data.frame()
+
+
 #TODO translate conname to edge ID and change in edgedf!!!!
 head(verts)
 dim(verts)
@@ -658,7 +674,29 @@ catch_iic <-  index_calculation(graph = river_graph,
                                 index_type = "full")
 
 catch_iic
-#PROB 0.08 (0.1 *0.8)
+
+
+
+catch_dci <-  index_calculation(graph = river_graph,
+                                weight = "length",
+                                B_ij_flag = FALSE,
+                                index_type = "full",
+                                index_mode = "from")
+
+catch_dci
+
+#  0.2277907 0.2277907     1
+
+catch_dci_asym <- index_calculation(graph = river_graph,
+                  weight = "length",
+                  B_ij_flag = FALSE,
+                  dir_fragmentation_type = "asymmetric",
+                  index_type = "full",
+                  index_mode = "from")
+
+catch_dci_asym
+#        num       den index
+#1 0.2277907 0.2277907     1
 
 
 ##################################################################################

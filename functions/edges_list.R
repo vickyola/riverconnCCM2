@@ -21,6 +21,7 @@ edges_list<- function(networklinks,rivernetwork){
       "from" =  segments$EdgeID[segments$TONODE == i ][1] ,
       "from2" =  segments$EdgeID[segments$TONODE == i][2] ,
       "from3" =  segments$EdgeID[segments$TONODE == i][3] , ##cases with more than 3 from segments??
+      "from4" =  segments$EdgeID[segments$TONODE == i][4] ,
       "to" =   segments$EdgeID[segments$FROMNODE ==i][1],
       "type" = links$type[links$id_barrier == i ],
       "id_links" = links$id_links[links$id_barrier == i ], 
@@ -31,11 +32,13 @@ edges_list<- function(networklinks,rivernetwork){
   }
   #clean it 
   dirdf <- do.call(rbind, dirlist) %>%  st_drop_geometry( )
-  dirdfclean <- rbind( dirdf %>% dplyr::select(-from2, -from3, from , to),
-                       dirdf %>% dplyr::select(-from, -from3 ,from2, to) %>%
+  dirdfclean <- rbind( dirdf %>% dplyr::select(-from2, -from3, -from4, from , to),
+                       dirdf %>% dplyr::select(-from, -from3, -from4, from2, to) %>%
                          rename(from = from2),
-                       dirdf %>% dplyr::select(-from2, -from , from3, to ) %>% 
-                         rename(from = from3))
+                       dirdf %>% dplyr::select(-from ,-from2,  -from4,  from3, to ) %>% 
+                         rename(from = from3),
+                       dirdf %>% dplyr::select(-from, -from2, -from3, from4, to) %>%
+                         rename(from = from4))
   dfreturn <- dirdfclean[!(is.na(dirdfclean$to)) & !(is.na(dirdfclean$from)), ] ##include in pipe
   
   return(dfreturn)
