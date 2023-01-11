@@ -390,6 +390,10 @@ edges_list<- function(networklinks,rivernetwork){
 river_net_sliced <- dam_include(network_links, river_net_simplified)
 edgedf <-edges_list(network_links,river_net_sliced)
 
+#rigth now the case with more than four river at one joint is included
+#multiple_confluences(shape_river_simple) of the original preprocessing prevents this
+#and mark this can couse problems.
+#why?
 
 edgedf <-edges_list(network_links,river_net_simplified) #nodams
 plot(st_geometry(river_net_simplified))

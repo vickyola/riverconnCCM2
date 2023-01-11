@@ -23,6 +23,10 @@ dam_snap_ccm<-  function(dams, rivershape, max_dist = 10) {
     nf.points.min <- nf.points[ which.min(st_distance(nf.points,dams)),]
     st_geometry(dams) <- st_geometry(nf.points.min)
     
+    
+    #%>%     st_buffer(1)
+    
+    
     #try!! 
     #nf_network <- sfnetwork(nf.points, nf.lines, edges_as_lines = TRUE)
     
