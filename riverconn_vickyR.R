@@ -18,8 +18,6 @@ library("ggpubr")
 library("cowplot")
 library("data.table")
 library("rgeos")
-#install.packages("remotes")
-#remotes::install_github("michaeldorman/nngeo") 
 #for parallel
 library("foreach")
 library("doParallel")
@@ -33,22 +31,11 @@ library("nngeo")
 
 #check packages list.functions.in.file() 
 
-#INPUT
-##################################################################################
-#Input formats
-#shape_river   #sf LINESTRING
-#shape_basin  #sf POLYGON
-#shape_dams #sf MULTIPOLYGON
-
-#download CCM2 gdb from https://ccm.jrc.ec.europa.eu/php/index.php?action=view&id=24
-##################################################################################
-#INPUT (change to your Location of input)
-
 #window <- "2004"
 #path <- paste0("C:/Users/Nutzer/Documents/phd/dammedfish/River_data/CCM/CCM21_LAEA_window",window,"/ccm21/") 
 #C:\Users\Vicky\Documents\phd\CCM2
 path <- paste0("C:/Users/Vicky/Documents/phd/CCM2/") 
-dbname <- "WGS84_W2004.gdb"
+dbname <- "WGS84_W2017.gdb"
 #dbname <- paste0("LAEA_W",window,".gdb") 
 
 dir.exists(paste0(path,dbname)) #check path
@@ -79,12 +66,12 @@ seaout_df <- seaout %>% as.data.frame()
 ##Example "Oude Rijn" in 2003
 unique(seaout_df$NAME)
 
-basinname <- "Seudre"
+basinname <- "Jordan"
 basin_id <- unique(na.omit(seaout_df[seaout_df$NAME == basinname,]$WSO_ID)) #WSO_ID River Basin ID
-unique(seaout_df$WSO_ID)
+#unique(seaout_df$WSO_ID)
 
-basin_id <- 446813
-basin_id %in% seaout_df$WSO_ID
+#basin_id <- 446813
+#basin_id %in% seaout_df$WSO_ID
 #alternative with unique Basin identifier WSO_ID
 #for all WSO_IDs
 #basin_id <- seaout_df$WSO_ID[642]
@@ -107,21 +94,25 @@ river_joins <- st_transform(nodes,st_crs(dam_in))#for elevation at node compare 
 #river_joins <- st_as_sf(river_joins, coords = c("X_LAEA","Y_LAEA"))
 #st_crs(river_joins) <- "+proj=longlat +datum=WGS84"
 
+st_write(river_joins, "C:/Users/Vicky/Documents/phd/CCM2/jordannodes.gpkg")
+
+
 #Select dams in basin and in Buffer area 
 ##TODO there is a faster way!
 dam <- st_intersection(dam_in, st_buffer(shape_basin,1)) #crop dams with basin and a buffer of 1
 
-# ##plot input
-plot(st_geometry(shape_basin))
-plot(st_geometry(shape_river),add =TRUE)
-plot(st_geometry(river_joins),add =TRUE, col="red")
-plot(st_geometry(dam),add =TRUE, col="green" , pch =19)
-
-#2.1 Shapefile Preprocessing  ##kann man kürzen
+# # ##plot input
+# plot(st_geometry(shape_basin))
+# plot(st_geometry(shape_river),add =TRUE)
+# plot(st_geometry(river_joins),add =TRUE, col="red")
+# plot(st_geometry(dam),add =TRUE, col="green" , pch =19)
+# 
+# #2.1 Shapefile Preprocessing  ##kann man kürzen
 ##################################################################################
 #rename attributes
 shape_river$UP_CELLS = shape_river$CONT_PIXELS# UP_CELLS The number of accumulated cells is a proxy of the upstream catchment area. 
 #CONT_PIXELS Area upstream the From Node drained by the river segment in 100x100 grid cells
+
 shape_river$alt = shape_river$ALT_GRADIENT 
 st_geometry(shape_river) <- "geometry"
 
@@ -297,7 +288,7 @@ network_links <-  river_joins %>%
     dplyr::select(ID) %>% mutate(pass_u = NA, pass_d = NA, type = "joint") %>%
     rename(id_barrier = ID, geometry = SHAPE) %>% ##enter here name of geometry column
   mutate(id_links = 1:nrow(.))
-str(network_links)
+#str(network_links)
 
 #2.5 Adding additional attributes and rename geometry column if necessary 
 ##################################################################################
@@ -305,10 +296,20 @@ str(network_links)
 ##alt = ALT_GRADIENT
 str(shape_river_line)
 river_net_simplified <- shape_river_line  %>%
-  mutate(EdgeID = as.character(1:nrow(.)))  #as.character
+  mutate(EdgeID = as.character(WSO1_ID) )  #as.character
+
 
 #plot(st_geometry(river_net_simplified))
 ##TODO more attributes?
+
+# startTime <- Sys.time()
+# 
+# sleep_func()
+# endTime <- Sys.time()
+# 
+# # prints recorded time
+# print(endTime - startTime)
+
 
 #3. igraph creation
 ##################################################################################
@@ -366,8 +367,14 @@ edges_list<- function(networklinks,rivernetwork){
     dirlist[[i]] <- data.frame(
       "from" =  segments$EdgeID[segments$TONODE == i ][1] ,
       "from2" =  segments$EdgeID[segments$TONODE == i][2] ,
-      "from3" =  segments$EdgeID[segments$TONODE == i][3] , ##cases with more than 3 from segments??
-      "to" =   segments$EdgeID[segments$FROMNODE ==i][1],
+      "from3" =  segments$EdgeID[segments$TONODE == i][3] , 
+      "from4" =  segments$EdgeID[segments$TONODE == i][4] ,
+      "to" =   segments$EdgeID[segments$FROMNODE ==i][1], 
+      ##problem Jordan dead end node in multiple segments a TONODE value but never FROMNODE
+      #rutine if length(segments$EdgeID[segments$FROMNODE == i]) == 0
+      "to2" =   segments$EdgeID[segments$FROMNODE ==i][2],
+      "to3" =   segments$EdgeID[segments$FROMNODE ==i][3],
+      "to4" =   segments$EdgeID[segments$FROMNODE ==i][4],
       "type" = links$type[links$id_barrier == i ],
       "id_links" = links$id_links[links$id_barrier == i ], 
       "id_barrier" = i ,
@@ -377,15 +384,50 @@ edges_list<- function(networklinks,rivernetwork){
   }
   #clean it 
   dirdf <- do.call(rbind, dirlist) %>%  st_drop_geometry( )
-  dirdfclean <- rbind( dirdf %>% dplyr::select(-from2, -from3, from , to),
-                       dirdf %>% dplyr::select(-from, -from3 ,from2, to) %>%
+  dirdfclean <- rbind( dirdf %>% dplyr::select(-from2, -from3, -from4, -to2, -to3, -to4, from , to),
+                       dirdf %>% dplyr::select(-from, -from3, -from4, -to2, -to3, -to4, from2, to) %>%
                          rename(from = from2),
-                       dirdf %>% dplyr::select(-from2, -from , from3, to ) %>% 
-                         rename(from = from3))
+                       dirdf %>% dplyr::select(-from ,-from2,  -from4, -to2, -to3, -to4,  from3, to ) %>% 
+                         rename(from = from3),
+                       dirdf %>% dplyr::select(-from, -from2, -from3, -to2, -to3, -to4, from4, to) %>%
+                         rename(from = from4), ##
+                       
+                       
+                       dirdf %>% dplyr::select(-from2, -from3, -from4, -to, -to3, -to4, from , to2) %>%
+                         rename( to = to2),
+                       dirdf %>% dplyr::select(-from, -from3, -from4, -to, -to3, -to4, from2, to2) %>%
+                         rename(from = from2, to = to2),
+                       dirdf %>% dplyr::select(-from ,-from2,  -from4, -to,-to3, -to4,   from3, to2 ) %>% 
+                         rename(from = from3, to = to2),
+                       dirdf %>% dplyr::select(-from, -from2, -from3, -to, -to3, -to4, from4, to2) %>%
+                         rename(from = from4, to = to2),
+                       
+                       dirdf %>% dplyr::select(-from2, -from3, -from4, -to, -to2, -to4, from , to3) %>%
+                         rename( to = to3),
+                       dirdf %>% dplyr::select(-from, -from3, -from4, -to, -to2, -to4, from2, to3) %>%
+                         rename(from = from2, to = to3),
+                       dirdf %>% dplyr::select(-from ,-from2,  -from4, -to,-to2, -to4,   from3, to3 ) %>% 
+                         rename(from = from3, to = to3),
+                       dirdf %>% dplyr::select(-from, -from2, -from3, -to, -to2, -to4, from4, to3) %>%
+                         rename(from = from4, to = to3),
+                       
+                       dirdf %>% dplyr::select(-from2, -from3, -from4, -to, -to3, -to2, from , to4) %>%
+                         rename( to = to4),
+                       dirdf %>% dplyr::select(-from, -from3, -from4, -to, -to3, -to2, from2, to4) %>%
+                         rename(from = from2, to = to4),
+                       dirdf %>% dplyr::select(-from ,-from2,  -from4, -to,-to3, -to2,   from3, to4 ) %>% 
+                         rename(from = from3, to = to4),
+                       dirdf %>% dplyr::select(-from, -from2, -from3, -to, -to3, -to2, from4, to4) %>%
+                         rename(from = from4, to = to4)
+                       )
   dfreturn <- dirdfclean[!(is.na(dirdfclean$to)) & !(is.na(dirdfclean$from)), ] ##include in pipe
-
+  
   return(dfreturn)
 }
+
+#jordan
+length(river_net_simplified$EdgeID[river_net_simplified$FROMNODE == 1363967])
+
 
 river_net_sliced <- dam_include(network_links, river_net_simplified)
 edgedf <-edges_list(network_links,river_net_sliced)
@@ -395,11 +437,10 @@ edgedf <-edges_list(network_links,river_net_sliced)
 #and mark this can couse problems.
 #why?
 
-edgedf <-edges_list(network_links,river_net_simplified) #nodams
-plot(st_geometry(river_net_simplified))
+#nodams
 river_net_sliced <- river_net_simplified
-
-#str(river_net_sliced)
+edgedf <-edges_list(network_links,river_net_sliced) 
+#st_write(river_net_sliced, "C:/Users/Vicky/Documents/phd/CCM2/jordan.gpkg")
 
 vertices <- river_net_sliced %>%
   st_drop_geometry %>%
@@ -407,7 +448,7 @@ vertices <- river_net_sliced %>%
   mutate(across(c(everything()), as.character))  %>% #, -geom
   mutate(length = as.numeric(SHAPE_Length), alt = as.numeric(alt)) %>% dplyr::select(name, everything())%>%
   mutate(Conname = as.character(1:nrow(.)))  #as.character
-head(vertices)
+#head(vertices)
 
 ##################################################################################
 #HIER try better include
@@ -467,7 +508,7 @@ l = c("MAINDRAIN_ID","LENGTH","CUM_LEN","PIXELS_100M","CATCHMENT_AREA","CONT_PIX
 for (i in l){
   g2<-delete_vertex_attr(g2, i)
 }
-igraph::get.vertex.attribute(g2) %>% names
+#igraph::get.vertex.attribute(g2) %>% names
 river_graph<-g2
 
 ##3.1 Editing the igraph object
@@ -553,25 +594,6 @@ edges_for_plot <- edgedf %>%
   rename(xend = lon, yend = lat) ##keep the attributes
 
 
-ggplot(edges_for_plot, aes(x = x, y = y, xend = xend, yend = yend)) +
-coord_fixed() +
- # geom_nodes(data = vertices) +
-  geom_edges(alpha = 0.5) +
-  scale_color_viridis()+
-  theme_blank()+
-  ggtitle("High-altitude organism") +
-  labs(caption = "Network directionality not shown") 
-
-#to test whether it is running 
-ggplot(gg0, aes(x = x, y = y, xend = xend, yend = yend)) +
-  coord_fixed() +
-  geom_nodes(aes(color = HSI_high)) +
-  geom_edges(alpha = 0.5) +
-  scale_color_viridis()+
-  theme_blank()+
-  ggtitle("High-altitude organism") +
-  labs(caption = "Network directionality not shown")
-
 ###########
 #läuft net weils irgendwie die coordinaten zersägt
 gg0 <- ggnetwork(river_graph, layout = coordinates %>% as.matrix(), scale = FALSE)
@@ -618,6 +640,43 @@ grid.arrange(
 #FIND OUT WHY NOT CONNECTED
 gsize(river_graph)#number of edges
 gorder(river_graph) #number of vertices #Segments
+
+igraph::components(river_graph) 
+
+graph <- river_graph
+
+# Do the clustering
+SCC <- components(graph)  
+str(SCC)
+names(SCC$membership)
+lapply(seq_along(SCC$csize)[SCC$csize > 1], function(x) 
+  V(graph)$name[SCC$membership %in% x])
+
+# Add colours and use the mark.group argument
+V(graph)$col <- rainbow(SCC$no)[SCC$membership]
+
+#1363967
+#plot(graph, mark.groups = split(1:vcount(graph), SCC$membership))
+edges_for_plot <- edgedf %>%
+  inner_join(as_data_frame(graph, what = "vertices") %>% dplyr::select(name, lon, lat, col), by = c('from' = 'name')) %>%
+  rename(x = lon, y = lat) %>%
+  inner_join(as_data_frame(graph, what = "vertices") %>% dplyr::select(name, lon, lat, col), by = c('to' = 'name')) %>%
+  rename(xend = lon, yend = lat)
+
+#igraph::get.vertex.attribute(graph) %>% names
+#head(edges_for_plot)
+
+ggplot() + # geom_sf(data =river_net_sliced)+
+  geom_curve(aes(x = x, y = y, xend = xend, yend = yend,colour  =  col.x),
+             data = edges_for_plot, curvature = 0.1, 
+             alpha = 0.5, position = "identity",show.legend = FALSE)
+
+
+
+
+
+count_components(river_graph)
+
 Isolated <- which(degree(river_graph)==0)  #degree of v number of its adjacent edges.
 lonely_graph <- subgraph(river_graph, Isolated)
 gsize(lonely_graph)#number of edges
