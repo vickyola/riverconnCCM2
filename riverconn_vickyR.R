@@ -22,8 +22,6 @@ library("rgeos")
 library("foreach")
 library("doParallel")
 library("sfnetworks")
-
-
 library("nngeo")
 
 #remotes::install_github("luukvdmeer/sfnetworks")
@@ -371,7 +369,10 @@ edges_list<- function(networklinks,rivernetwork){
       "from4" =  segments$EdgeID[segments$TONODE == i][4] ,
       "to" =   segments$EdgeID[segments$FROMNODE ==i][1], 
       ##problem Jordan dead end node in multiple segments a TONODE value but never FROMNODE
-      #rutine if length(segments$EdgeID[segments$FROMNODE == i]) == 0
+      #rotine if length(segments$EdgeID[segments$FROMNODE == i]) == 0
+      #dead sea!!
+      # moth node has no downstream segment
+      
       "to2" =   segments$EdgeID[segments$FROMNODE ==i][2],
       "to3" =   segments$EdgeID[segments$FROMNODE ==i][3],
       "to4" =   segments$EdgeID[segments$FROMNODE ==i][4],
@@ -421,13 +422,15 @@ edges_list<- function(networklinks,rivernetwork){
                          rename(from = from4, to = to4)
                        )
   dfreturn <- dirdfclean[!(is.na(dirdfclean$to)) & !(is.na(dirdfclean$from)), ] ##include in pipe
+  #maybe remove !(is.na(dirdfclean$to))
+  
   
   return(dfreturn)
 }
 
 #jordan
 length(river_net_simplified$EdgeID[river_net_simplified$FROMNODE == 1363967])
-
+river_net_simplified$EdgeID[river_net_simplified$TONODE == 1363967]
 
 river_net_sliced <- dam_include(network_links, river_net_simplified)
 edgedf <-edges_list(network_links,river_net_sliced)
@@ -643,14 +646,16 @@ gorder(river_graph) #number of vertices #Segments
 
 igraph::components(river_graph) 
 
-graph <- river_graph
+graph <- as.undirected(river_graph, mode ="mutual")
+#    Two directed edges are created for each undirected edge, one in each direction.
 
 # Do the clustering
 SCC <- components(graph)  
 str(SCC)
-names(SCC$membership)
-lapply(seq_along(SCC$csize)[SCC$csize > 1], function(x) 
-  V(graph)$name[SCC$membership %in% x])
+
+#names(SCC$membership)
+#lapply(seq_along(SCC$csize)[SCC$csize > 1], function(x) 
+ # V(graph)$name[SCC$membership %in% x])
 
 # Add colours and use the mark.group argument
 V(graph)$col <- rainbow(SCC$no)[SCC$membership]
@@ -662,9 +667,6 @@ edges_for_plot <- edgedf %>%
   rename(x = lon, y = lat) %>%
   inner_join(as_data_frame(graph, what = "vertices") %>% dplyr::select(name, lon, lat, col), by = c('to' = 'name')) %>%
   rename(xend = lon, yend = lat)
-
-#igraph::get.vertex.attribute(graph) %>% names
-#head(edges_for_plot)
 
 ggplot() + # geom_sf(data =river_net_sliced)+
   geom_curve(aes(x = x, y = y, xend = xend, yend = yend,colour  =  col.x),
