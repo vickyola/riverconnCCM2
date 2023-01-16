@@ -24,6 +24,8 @@ library("doParallel")
 library("sfnetworks")
 library("nngeo")
 
+#spatstat.random
+
 #remotes::install_github("luukvdmeer/sfnetworks")
 #remotes::install_github("michaeldorman/nngeo")
 
@@ -33,7 +35,7 @@ library("nngeo")
 #path <- paste0("C:/Users/Nutzer/Documents/phd/dammedfish/River_data/CCM/CCM21_LAEA_window",window,"/ccm21/") 
 #C:\Users\Vicky\Documents\phd\CCM2
 path <- paste0("C:/Users/Vicky/Documents/phd/CCM2/") 
-dbname <- "WGS84_W2017.gdb"
+dbname <- "WGS84_W2004.gdb"
 #dbname <- paste0("LAEA_W",window,".gdb") 
 
 dir.exists(paste0(path,dbname)) #check path
@@ -51,7 +53,14 @@ amberpath <-  "C:/Users/Vicky/Documents/phd/Amber/atlas.csv"
 
 amber <- fread(amberpath)
 dam_in <- st_as_sf(amber, coords = c("Longitude_WGS84","Latitude_WGS84"))
+
+#fictional dam.shp
+dampath <- "C:/Users/Vicky/Documents/phd/fictional_dam/fictional_dam.shp"
+#file.exists(dampath)
+dam_in <- st_read(dampath)
 st_crs(dam_in) <- "+proj=longlat +datum=WGS84"
+
+head(dam_in)
 
 ##################################################################################
 #Chose River Basin (Seaoutlet)
@@ -66,9 +75,9 @@ unique(seaout_df$NAME)
 
 basinname <- "Jordan"
 basin_id <- unique(na.omit(seaout_df[seaout_df$NAME == basinname,]$WSO_ID)) #WSO_ID River Basin ID
-#unique(seaout_df$WSO_ID)
+#unique(seaout_df$WSO_ID) 446812
 
-#basin_id <- 446813
+basin_id <- 446812
 #basin_id %in% seaout_df$WSO_ID
 #alternative with unique Basin identifier WSO_ID
 #for all WSO_IDs
@@ -92,19 +101,20 @@ river_joins <- st_transform(nodes,st_crs(dam_in))#for elevation at node compare 
 #river_joins <- st_as_sf(river_joins, coords = c("X_LAEA","Y_LAEA"))
 #st_crs(river_joins) <- "+proj=longlat +datum=WGS84"
 
-st_write(river_joins, "C:/Users/Vicky/Documents/phd/CCM2/jordannodes.gpkg")
+#st_write(river_joins, "C:/Users/Vicky/Documents/phd/CCM2/jordannodes.gpkg")
 
 
 #Select dams in basin and in Buffer area 
 ##TODO there is a faster way!
 dam <- st_intersection(dam_in, st_buffer(shape_basin,1)) #crop dams with basin and a buffer of 1
+str(dam)
 
 # # ##plot input
-# plot(st_geometry(shape_basin))
-# plot(st_geometry(shape_river),add =TRUE)
-# plot(st_geometry(river_joins),add =TRUE, col="red")
-# plot(st_geometry(dam),add =TRUE, col="green" , pch =19)
-# 
+plot(st_geometry(shape_basin))
+plot(st_geometry(shape_river),add =TRUE)
+plot(st_geometry(river_joins),add =TRUE, col="red")
+plot(st_geometry(dam),add =TRUE, col="green" , pch =19)
+
 # #2.1 Shapefile Preprocessing  ##kann man kürzen
 ##################################################################################
 #rename attributes
@@ -121,6 +131,50 @@ shape_river_simple <- shape_river %>%
 shape_river_line <- shape_river %>% st_cast(.,"LINESTRING" ) %>% 
   mutate(id = WSO1_ID)  # 1:nrow(.)
 
+
+
+dam1 <-shape_river_line[shape_river_line$WSO1_ID ==531606,]
+
+plot(st_geometry(shape_river_line))
+plot(st_geometry(dam1),add=TRUE, col="red")
+st_line_midpoints <- function(sf_lines = NULL) {
+  
+  g <- st_geometry(sf_lines)
+  
+  g_mids <- lapply(g, function(x) {
+    
+    coords <- as.matrix(x)
+    
+    # this is just a copypaste of View(maptools:::getMidpoints):
+    get_mids <- function (coords) {
+      dist <- sqrt((diff(coords[, 1])^2 + (diff(coords[, 2]))^2))
+      dist_mid <- sum(dist)/2
+      dist_cum <- c(0, cumsum(dist))
+      end_index <- which(dist_cum > dist_mid)[1]
+      start_index <- end_index - 1
+      start <- coords[start_index, ]
+      end <- coords[end_index, ]
+      dist_remaining <- dist_mid - dist_cum[start_index]
+      mid <- start + (end - start) * (dist_remaining/dist[start_index])
+      return(mid)
+    }
+    
+    mids <- st_point(get_mids(coords))
+  })
+  
+  out <- st_sfc(g_mids, crs = st_crs(sf_lines))
+  out <- st_sf(out)
+}
+
+
+#random dam
+dam1_center <- st_line_midpoints(dam1)
+plot(st_geometry(dam1_center),add=TRUE, col="green")
+
+x = dam1_center
+dams_to_points <- x %>% mutate(id = 1:nrow(.))
+#531606
+
 #2.3 Dams preprocessing  ##TODO kürzen
 ##################################################################################
 #dams
@@ -131,72 +185,66 @@ x <-dams_to_points
 #################################################################################
 
 dam_snap_ccm<-  function(dams, rivershape, max_dist = 10) {
-  # 
-  #
-  max_dist=9000
-   i= 2
+
+#  max_dist=9000
+ #  i= 1
    dams <- x[i,]
-   #str(dams)
-   rivershape <- shape_river_line
-  
-  #dams <- dams
-  lines <- rivershape %>% st_as_sf()
-  nf <- lines[st_nearest_feature(dams, lines), ]
-  
-  
-  plot(st_geometry(nf))
-  plot(st_geometry(dams), col="red", pch =19, add=TRUE)
-  
-  startnf = st_startpoint (nf)
-  endnf = st_endpoint (nf)
-  
-  plot(st_geometry(endnf),add=TRUE, col="green")
-  plot(st_geometry(startnf),add=TRUE, col="pink")
-  
+   #rivershape <- shape_river_line
+   lines <- rivershape %>% st_as_sf()
+   nf <- lines[st_nearest_feature(dams, lines), ]
+   # plot(st_geometry(nf))
+   # plot(st_geometry(dams), col="red", add=TRUE)
 
   if ( as.numeric(st_distance(dams, nf)) < max_dist) {
     nf.points <- nf  %>%  st_as_sf %>%   st_cast("POINT")
     nf.lines <- nf  %>%  st_as_sf %>%   st_cast("LINESTRING")
-    
-    
+    #max_dist <-1000
+   #  
     dams_p <- st_nearest_points(dams, nf)%>%   st_cast("POINT") %>%  st_as_sf
     dams_p <- dams_p[which.min(st_distance(nf,dams_p)),]
-    
-    str(dams_p)
-    plot(st_geometry(dams_p), col="cyan", pch =19, add=TRUE)
-
-     st_geometry(dams) <- st_geometry(dams_p)
-     plot(st_geometry(dams), col="blue", pch =19, add=TRUE)
-     
-     buff <- st_buffer(dams,50)  %>%  st_as_sf
+   #  
+     val <- 50
+     buff <- st_buffer(dams_p,val)  %>%  st_as_sf
      plot(st_geometry(buff), col="yellow", pch =19,add=TRUE)
      
     #integrate dam in segment as node
-     nf.splits <- st_split(nf, buff) %>%  st_cast() %>% mutate(LENGTH= as.integer( st_length(.))) %>%  subset(. , LENGTH > 110 )
-     str(nf.splits)
-     str(st_combine(nf.splits))
+     nf.splits <- st_split(nf, buff) %>%  st_cast() %>% mutate(LENGTH= as.integer( st_length(.))) %>%  subset(. , LENGTH > 3*val )
+     plot(st_geometry(nf.splits), col="red", pch =6,add=TRUE)
      
-     plot(st_geometry(nf.splits),add=TRUE, col="cyan")
-     plot(st_geometry((nf.splits[1,])),add=TRUE, col="green")
-     plot(st_geometry((nf.splits[2,])),add=TRUE, col="deeppink")
+     pairs <- st_combine(c( st_startpoint(nf.splits ), st_endpoint(nf.splits)) )
      
-     connected <- st_connect(damsnf.splits[1,])
-     str(connected)
-     plot((connected),add=TRUE, col="coral")
      
-  #str(nf.splits)
-
+     plot(st_geometry(pairs),add=TRUE, pch =6,col="cyan")
      
-
-     # st_geometry(dams) <- st_geometry(nf.segments_min)
-    #plot(st_geometry(nf.segments_min),add=TRUE, col="red")
+     pair <- st_intersection(pairs, st_buffer(dams_p,val*2))%>%  st_cast("POINT") %>% st_sf
+     plot(st_geometry(pair),add=TRUE, col="green")
     
-    
-    
-    
-    dams <- st_as_sf(dams)
+     com <- pair %>% st_union %>% st_sf%>% st_cast("LINESTRING") %>% st_sf
+     plot(st_geometry(com),add=TRUE, col="blue")
+     #combine two new lines
+     splits.geo <- st_geometry(nf.splits) %>% st_union
+     con.all <- st_union(splits.geo, com)  %>% st_sf %>% st_cast("LINESTRING")# %>%st_cast("LINESTRING")
+     #str(con.all)
+     #str(con.all %>% st_combine %>% st_sf%>% st_cast("LINESTRING") %>% st_sf )#%>% st_union)
+     
+     plot(st_geometry(con.all))
+     plot(st_geometry(nf),add=TRUE, col="red")
+     #%>% st_segmentize( max_dist) %>%   st_cast("POINT")))# %>% st_cast("POINTS"))
+#FEHLER???
+     #plot(st_geometry(con.all%>% st_endpoint),add=TRUE, col="red")
+   
+       new_geom <- rbind( c(st_geometry(nf.splits), st_geometry(line))) %>% st_sfc%>%  st_cast("LINESTRING")%>%  st_union
+       # (new_geom)
+       
+       #new geom segments
+       st_geometry(rivershape) <- st_geometry(con.all)
+      
+       plot(st_geometry(line),add=TRUE, col="green")
+       st_geometry(dams) <- st_geometry(dams_p)
+       str(dams)
+         dams <- st_as_sf(dams)
   }
-  return(dams)
+  return(rivershape,dams)
 }
 
 ##################################################################################
@@ -213,15 +261,18 @@ registerDoParallel(cl)
 #clusterEvalQ(cl, .libPaths("C:/Users/Nutzer/AppData/Local/R/win-library/4.2" )) #Change  here your R library path
 clusterEvalQ(cl, .libPaths("C:/Users/Vicky/AppData/Local/R/win-library/4.2" )) #Change  here your R library path
 
-funpat <- "functions/" #path of function to run parallel 
+funpat <- "GitHub/riverconnCCM2/functions/" #path of function to run parallel 
+#funpat <- "functions/" #path of function to run parallel 
 
-#dir.exists(funpat)
+#getwd()
+
+dir.exists(funpat)
 #file.exists(paste0(funpat,"dam_snap_ccm.R"))
 
 output <- foreach(i=1:nrow(x), .combine = rbind, 
                   .packages= c('dplyr', 'sf')) %dopar% {
   source(paste0(funpat,"dam_snap_ccm.R")) # That is the main point. Source your Function File here.
-  temp <- dam_snap_ccm(x[i,],shape_river_line,max_dist= 90) # use your custom function after sourcing 
+  temp <- dam_snap_ccm(x[i,],shape_river_line,max_dist= 1000) # use your custom function after sourcing 
   temp
 }
 
@@ -237,23 +288,24 @@ dams_snapped <- output
 #   cat(paste0(i, " "))
 # }
 # dams_snapped  <- do.call(rbind, snapped)
+# str(dams_snapped)
 ##################################################################################
 
 plot(st_geometry(shape_river_line))
 plot(st_geometry(x),add =TRUE, col= "red")
-plot(st_geometry(dams_snapped),add =TRUE, col= "green")
+plot(st_geometry(dams_to_points),add =TRUE, col= "green")
 
+str(dams_snapped)
 
 # Retain dams that were snapped
 dams_snapped_reduced <-
   dams_snapped[st_contains(shape_river_simple %>% st_sf(), dams_snapped, prepared = FALSE)[[1]],]
-
 str(dams_snapped_reduced)
 
-plot(st_geometry(dams_snapped_reduced),add =TRUE, col= "blue")
+plot(st_geometry(dams_snapped_reduced))#,add =TRUE, col= "blue")
 
 #check:
-st_distance(dams_snapped_reduced,shape_river_simple ) %>% sum
+st_distance(dams_snapped,shape_river_simple ) %>% sum
 #should be 0
 
 ##dobblesnap
@@ -264,7 +316,7 @@ dams_snapped_reduced_joined <- dams_snapped_reduced %>%
   group_by(cluster) %>%
   slice(1) %>%
   ungroup() %>%
-  mutate(id_dam = as.character(1:nrow(.)), pass_u = 0.1, pass_d = 0.8) %>%
+  mutate(id_dam = as.character(1:nrow(.)), pass_u = 0, pass_d = 0) %>%
   as.data.frame %>%  st_as_sf()
 
 ##################################################################################
@@ -292,7 +344,7 @@ network_links <-  river_joins %>%
 ##################################################################################
 # #Elevation
 ##alt = ALT_GRADIENT
-str(shape_river_line)
+#str(shape_river_line)
 river_net_simplified <- shape_river_line  %>%
   mutate(EdgeID = as.character(WSO1_ID) )  #as.character
 
@@ -428,9 +480,9 @@ edges_list<- function(networklinks,rivernetwork){
   return(dfreturn)
 }
 
-#jordan
-length(river_net_simplified$EdgeID[river_net_simplified$FROMNODE == 1363967])
-river_net_simplified$EdgeID[river_net_simplified$TONODE == 1363967]
+# #jordan
+# length(river_net_simplified$EdgeID[river_net_simplified$FROMNODE == 1363967])
+# river_net_simplified$EdgeID[river_net_simplified$TONODE == 1363967]
 
 river_net_sliced <- dam_include(network_links, river_net_simplified)
 edgedf <-edges_list(network_links,river_net_sliced)
@@ -923,6 +975,7 @@ lab_d_index <- list()
 letter_d_index <- list()
 
 # 1: Symmetric Dendritic Connectivity Index (no biotic effects)
+#pota or dia
 lab_d_index[[1]] <- "Symmetric DCI"
 letter_d_index[[1]] <- "A"
 d_index[[1]] <- d_index_calculation(graph = river_graph, 

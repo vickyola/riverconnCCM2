@@ -10,7 +10,7 @@
 #'
 #' @examples
 #'
-dam_snap_ccm<-  function(dams, rivershape, max_dist = 10) {
+dam_snap_ccm<-  function(dams, rivershape, max_dist = 100) {
   dams <- dams
   lines <- rivershape %>% st_as_sf()
   nf <- lines[st_nearest_feature(dams, lines), ]
