@@ -19,8 +19,9 @@ dam_snap_ccm<-  function(dams, rivershape, max_dist = 100) {
   
   if ( as.numeric(st_distance(dams, nf)) < max_dist) {
     nf.points <- nf  %>%  st_as_sf %>%   st_cast("POINT") 
-    nf.lines <- nf  %>%  st_as_sf %>%   st_cast("LINESTRING") #%>%  st_collection_extract(.,"LINESTRING")
-    nf.points.min <- nf.points[ which.min(st_distance(nf.points,dams)),]
+    #nf.lines <- nf  %>%  st_as_sf %>%   st_cast("LINESTRING") 
+
+    nf.points.min <- nf.points[ which.min(st_distance(dams, nf.points)),]
     st_geometry(dams) <- st_geometry(nf.points.min)
     
     

@@ -53,14 +53,20 @@ amberpath <-  "C:/Users/Vicky/Documents/phd/Amber/atlas.csv"
 
 amber <- fread(amberpath)
 dam_in <- st_as_sf(amber, coords = c("Longitude_WGS84","Latitude_WGS84"))
+str(dam_in[1,])
 
 #fictional dam.shp
-dampath <- "C:/Users/Vicky/Documents/phd/fictional_dam/fictional_dam.shp"
-#file.exists(dampath)
-dam_in <- st_read(dampath)
+# dampath <- "C:/Users/Vicky/Documents/phd/fictional_dam/fictional_dam.shp"
+# #file.exists(dampath)
+# dam_in <- st_read(dampath)
+# str(dam_in)
+
+
 st_crs(dam_in) <- "+proj=longlat +datum=WGS84"
 
-head(dam_in)
+str(dam_in)
+
+#dam_in[1,]
 
 ##################################################################################
 #Chose River Basin (Seaoutlet)
@@ -77,6 +83,7 @@ basinname <- "Jordan"
 basin_id <- unique(na.omit(seaout_df[seaout_df$NAME == basinname,]$WSO_ID)) #WSO_ID River Basin ID
 #unique(seaout_df$WSO_ID) 446812
 
+#for fictional example
 basin_id <- 446812
 #basin_id %in% seaout_df$WSO_ID
 #alternative with unique Basin identifier WSO_ID
@@ -109,6 +116,8 @@ river_joins <- st_transform(nodes,st_crs(dam_in))#for elevation at node compare 
 dam <- st_intersection(dam_in, st_buffer(shape_basin,1)) #crop dams with basin and a buffer of 1
 str(dam)
 
+dam <- dam_in[1,]
+
 # # ##plot input
 plot(st_geometry(shape_basin))
 plot(st_geometry(shape_river),add =TRUE)
@@ -132,48 +141,8 @@ shape_river_line <- shape_river %>% st_cast(.,"LINESTRING" ) %>%
   mutate(id = WSO1_ID)  # 1:nrow(.)
 
 
-
-dam1 <-shape_river_line[shape_river_line$WSO1_ID ==531606,]
-
-plot(st_geometry(shape_river_line))
-plot(st_geometry(dam1),add=TRUE, col="red")
-st_line_midpoints <- function(sf_lines = NULL) {
-  
-  g <- st_geometry(sf_lines)
-  
-  g_mids <- lapply(g, function(x) {
-    
-    coords <- as.matrix(x)
-    
-    # this is just a copypaste of View(maptools:::getMidpoints):
-    get_mids <- function (coords) {
-      dist <- sqrt((diff(coords[, 1])^2 + (diff(coords[, 2]))^2))
-      dist_mid <- sum(dist)/2
-      dist_cum <- c(0, cumsum(dist))
-      end_index <- which(dist_cum > dist_mid)[1]
-      start_index <- end_index - 1
-      start <- coords[start_index, ]
-      end <- coords[end_index, ]
-      dist_remaining <- dist_mid - dist_cum[start_index]
-      mid <- start + (end - start) * (dist_remaining/dist[start_index])
-      return(mid)
-    }
-    
-    mids <- st_point(get_mids(coords))
-  })
-  
-  out <- st_sfc(g_mids, crs = st_crs(sf_lines))
-  out <- st_sf(out)
-}
-
-
-#random dam
-dam1_center <- st_line_midpoints(dam1)
-plot(st_geometry(dam1_center),add=TRUE, col="green")
-
-x = dam1_center
-dams_to_points <- x %>% mutate(id = 1:nrow(.))
 #531606
+
 
 #2.3 Dams preprocessing  ##TODO kürzen
 ##################################################################################
@@ -181,71 +150,73 @@ dams_to_points <- x %>% mutate(id = 1:nrow(.))
 dams_to_points <- dam %>% mutate(id = GUID) %>% dplyr::select(id) 
  
 x <-dams_to_points
+str(x)
+
 
 #################################################################################
-
-dam_snap_ccm<-  function(dams, rivershape, max_dist = 10) {
-
-#  max_dist=9000
- #  i= 1
-   dams <- x[i,]
-   #rivershape <- shape_river_line
-   lines <- rivershape %>% st_as_sf()
-   nf <- lines[st_nearest_feature(dams, lines), ]
-   # plot(st_geometry(nf))
-   # plot(st_geometry(dams), col="red", add=TRUE)
-
-  if ( as.numeric(st_distance(dams, nf)) < max_dist) {
-    nf.points <- nf  %>%  st_as_sf %>%   st_cast("POINT")
-    nf.lines <- nf  %>%  st_as_sf %>%   st_cast("LINESTRING")
-    #max_dist <-1000
-   #  
-    dams_p <- st_nearest_points(dams, nf)%>%   st_cast("POINT") %>%  st_as_sf
-    dams_p <- dams_p[which.min(st_distance(nf,dams_p)),]
-   #  
-     val <- 50
-     buff <- st_buffer(dams_p,val)  %>%  st_as_sf
-     plot(st_geometry(buff), col="yellow", pch =19,add=TRUE)
-     
-    #integrate dam in segment as node
-     nf.splits <- st_split(nf, buff) %>%  st_cast() %>% mutate(LENGTH= as.integer( st_length(.))) %>%  subset(. , LENGTH > 3*val )
-     plot(st_geometry(nf.splits), col="red", pch =6,add=TRUE)
-     
-     pairs <- st_combine(c( st_startpoint(nf.splits ), st_endpoint(nf.splits)) )
-     
-     
-     plot(st_geometry(pairs),add=TRUE, pch =6,col="cyan")
-     
-     pair <- st_intersection(pairs, st_buffer(dams_p,val*2))%>%  st_cast("POINT") %>% st_sf
-     plot(st_geometry(pair),add=TRUE, col="green")
-    
-     com <- pair %>% st_union %>% st_sf%>% st_cast("LINESTRING") %>% st_sf
-     plot(st_geometry(com),add=TRUE, col="blue")
-     #combine two new lines
-     splits.geo <- st_geometry(nf.splits) %>% st_union
-     con.all <- st_union(splits.geo, com)  %>% st_sf %>% st_cast("LINESTRING")# %>%st_cast("LINESTRING")
-     #str(con.all)
-     #str(con.all %>% st_combine %>% st_sf%>% st_cast("LINESTRING") %>% st_sf )#%>% st_union)
-     
-     plot(st_geometry(con.all))
-     plot(st_geometry(nf),add=TRUE, col="red")
-     #%>% st_segmentize( max_dist) %>%   st_cast("POINT")))# %>% st_cast("POINTS"))
-#FEHLER???
-     #plot(st_geometry(con.all%>% st_endpoint),add=TRUE, col="red")
-   
-       new_geom <- rbind( c(st_geometry(nf.splits), st_geometry(line))) %>% st_sfc%>%  st_cast("LINESTRING")%>%  st_union
-       # (new_geom)
-       
-       #new geom segments
-       st_geometry(rivershape) <- st_geometry(con.all)
-      
-       plot(st_geometry(line),add=TRUE, col="green")
-       st_geometry(dams) <- st_geometry(dams_p)
-       str(dams)
-         dams <- st_as_sf(dams)
-  }
-  return(rivershape,dams)
-}
+# 
+# dam_snap_ccm<-  function(dams, rivershape, max_dist = 10) {
+# 
+# #  max_dist=9000
+#  #  i= 1
+#    dams <- x[i,]
+#    #rivershape <- shape_river_line
+#    lines <- rivershape %>% st_as_sf()
+#    nf <- lines[st_nearest_feature(dams, lines), ]
+#    # plot(st_geometry(nf))
+#    # plot(st_geometry(dams), col="red", add=TRUE)
+# 
+#   if ( as.numeric(st_distance(dams, nf)) < max_dist) {
+#     nf.points <- nf  %>%  st_as_sf %>%   st_cast("POINT")
+#     nf.lines <- nf  %>%  st_as_sf %>%   st_cast("LINESTRING")
+#     #max_dist <-1000
+#    #  
+#     dams_p <- st_nearest_points(dams, nf)%>%   st_cast("POINT") %>%  st_as_sf
+#     dams_p <- dams_p[which.min(st_distance(nf,dams_p)),]
+#    #  
+#      val <- 50
+#      buff <- st_buffer(dams_p,val)  %>%  st_as_sf
+#      plot(st_geometry(buff), col="yellow", pch =19,add=TRUE)
+#      
+#     #integrate dam in segment as node
+#      nf.splits <- st_split(nf, buff) %>%  st_cast() %>% mutate(LENGTH= as.integer( st_length(.))) %>%  subset(. , LENGTH > 3*val )
+#      plot(st_geometry(nf.splits), col="red", pch =6,add=TRUE)
+#      
+#      pairs <- st_combine(c( st_startpoint(nf.splits ), st_endpoint(nf.splits)) )
+#      
+#      
+#      plot(st_geometry(pairs),add=TRUE, pch =6,col="cyan")
+#      
+#      pair <- st_intersection(pairs, st_buffer(dams_p,val*2))%>%  st_cast("POINT") %>% st_sf
+#      plot(st_geometry(pair),add=TRUE, col="green")
+#     
+#      com <- pair %>% st_union %>% st_sf%>% st_cast("LINESTRING") %>% st_sf
+#      plot(st_geometry(com),add=TRUE, col="blue")
+#      #combine two new lines
+#      splits.geo <- st_geometry(nf.splits) %>% st_union
+#      con.all <- st_union(splits.geo, com)  %>% st_sf %>% st_cast("LINESTRING")# %>%st_cast("LINESTRING")
+#      #str(con.all)
+#      #str(con.all %>% st_combine %>% st_sf%>% st_cast("LINESTRING") %>% st_sf )#%>% st_union)
+#      
+#      plot(st_geometry(con.all))
+#      plot(st_geometry(nf),add=TRUE, col="red")
+#      #%>% st_segmentize( max_dist) %>%   st_cast("POINT")))# %>% st_cast("POINTS"))
+# #FEHLER???
+#      #plot(st_geometry(con.all%>% st_endpoint),add=TRUE, col="red")
+#    
+#        new_geom <- rbind( c(st_geometry(nf.splits), st_geometry(line))) %>% st_sfc%>%  st_cast("LINESTRING")%>%  st_union
+#        # (new_geom)
+#        
+#        #new geom segments
+#        st_geometry(rivershape) <- st_geometry(con.all)
+#       
+#        plot(st_geometry(line),add=TRUE, col="green")
+#        st_geometry(dams) <- st_geometry(dams_p)
+#        str(dams)
+#          dams <- st_as_sf(dams)
+#   }
+#   return(rivershape,dams)
+# }
 
 ##################################################################################
 #Speed up by parrallel processing
