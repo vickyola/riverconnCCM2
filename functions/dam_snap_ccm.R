@@ -30,7 +30,6 @@ dam_snap_ccm<-  function(dams, rivershape, max_dist = 100) {
     
     #try!! 
     #nf_network <- sfnetwork(nf.points, nf.lines, edges_as_lines = TRUE)
-    
     #nf_blend  = st_network_blend(nf_network, dams, tolerance = 90)
 
     #this also don't work!
