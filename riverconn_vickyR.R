@@ -1,3 +1,4 @@
+#install.packages("")
 library("rgdal")
 library("tidyverse")
 library("sf")
@@ -8,38 +9,31 @@ library("igraph")
 library("riverconn")
 library("elevatr")
 library("gridExtra")
-library("ggnetwork")
-#remotes::install_github("briatte/ggnetwork") ##install from github ! fixed some bugs 6 for plotting!
 library("lwgeom")
 library("gridExtra")
-#library("corrmorant")  ##version problem try to make virt env with R version under which riverconn was writen
 library("RANN")
-library("ggpubr")
 library("cowplot")
 library("data.table")
 library("rgeos")
 #for parallel
-library("foreach")
-library("doParallel")
-library("sfnetworks")
-library("nngeo")
-
-#spatstat.random
-
-#remotes::install_github("luukvdmeer/sfnetworks")
-#remotes::install_github("michaeldorman/nngeo")
+# library("foreach")
+# library("doParallel")
+# library("sfnetworks")
+# library("nngeo")
+#library("ggnetwork")
+#library("ggpubr")
 
 #check packages list.functions.in.file() 
 
-#window <- "2004"
-#path <- paste0("C:/Users/Nutzer/Documents/phd/dammedfish/River_data/CCM/CCM21_LAEA_window",window,"/ccm21/") 
-#C:\Users\Vicky\Documents\phd\CCM2
-path <- paste0("C:/Users/Vicky/Documents/phd/CCM2/") 
-dbname <- "WGS84_W2004.gdb"
-#dbname <- paste0("LAEA_W",window,".gdb") 
 
-dir.exists(paste0(path,dbname)) #check path
-#ogrListLayers(paste0(path,dbname))
+path <- paste0("/home/vicky/Documents/phd/dammedfish/River_data/LAEA/")
+dir.exists(path)
+window <- "2004"
+dbname <- paste0("LAEA_W",window,".gdb") 
+
+#dir.exists(paste0(path,dbname)) #check path
+
+ogrListLayers(paste0(path,dbname))
 
 seaout <- st_read(paste0(path,dbname), layer = "SEAOUTLETS" )
 segments  <- st_read(paste0(path,dbname), layer = "RIVERSEGMENTS" )
