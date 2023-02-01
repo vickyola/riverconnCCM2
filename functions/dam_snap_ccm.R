@@ -1,4 +1,4 @@
-#' Function to create new segments 
+#' Function to relocate dam positions to overlap with the network
 #'
 #' @param dams POINT sf with barrier locations  
 #' 

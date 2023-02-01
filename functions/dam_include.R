@@ -1,8 +1,8 @@
 #' Function to create new segments at the location of a barrier and removes the old segment prior barrier
 #'
-#' @param linksvector a sf dataframe "type"       "id_barrier" "pass_u"     "pass_d"     "geometry"   "id_links"  
+#' @param networklinks a sf dataframe "type"       "id_barrier" "pass_u"     "pass_d"     "geometry"   "id_links"  
 #' 
-#' @param river_net_simplified a polygon shapefile LINESTRING with EdgeID, FROMNODE, TONODE attributes
+#' @param rivernetwork a polygon shapefile LINESTRING with EdgeID, FROMNODE, TONODE attributes
 #' (must be of class sf)
 #'
 #' @return river_net_simplified with new segments
