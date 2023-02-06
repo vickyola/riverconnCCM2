@@ -1,7 +1,7 @@
 # Approach to use riverconn with CMM2 data
 
 This repository contains instructions for prepocessing of CCM2 data for river network connectivity calculations using the R package riverconn.
-
+[riverconn](https://github.com/cran/riverconn "Git repository for R package rivercon.")
 ## Functions 
 The folder "functions" contains the main important functions for the preprocessing
 
