@@ -12,9 +12,9 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction
 
-This document is a guide to create an igraph object from CCM2 geodata to use with the riverconn package. The pre-processing is adapted for CCM2 data which have a higher resolution than the ECRINS database on which the riverconn package was developed. Due to the directionallity information contained in CCM2 the pre-processing can be accelerated. 
-Further changes are made in the inclusion of barriers and the creation of the igraph object.  
-This guide is based on the Tutorial of Damiano Baldan [riverconn_tutorial](https://damianobaldan.github.io/riverconn_tutorial/)
+This document is a guide to create an igraph object from CCM2 geodata for use with the riverconn package. The pre-processing is adapted for CCM2 data which has a higher resolution than the ECRINS database on which the riverconn package was developed. Due to the directionallity information contained in CCM2 the pre-processing can be accelerated. 
+Other changes include the inclusion of barriers and the creation of the igraph object.  
+This guide is based on the [riverconn_tutorial](https://damianobaldan.github.io/riverconn_tutorial/) of Damiano Baldan. 
 
 # 1.1 Packages needed
 
@@ -31,7 +31,7 @@ library("igraph")
 library("riverconn")
 library("elevatr")
 library("gridExtra")
-library("ggnetwork")
+#library("ggnetwork") # not needed rigth now
 library("lwgeom")
 library("gridExtra")
 library("RANN")
@@ -43,37 +43,43 @@ library("foreach")
 library("doParallel")
 
 ```
-By using 'sf' objects and their ability to link geographic information to the data.frame structure, it is easy to edit the rivernetwork while keeping the geometry.
 
-# Data Input 
+# Data 
 
-For the river network the geodatabase CCM2 is used [CCM2](https://ccm.jrc.ec.europa.eu/php/index.php?action=view&id=24). 
+For the river network the geodatabase [CCM2](https://ccm.jrc.ec.europa.eu/php/index.php?action=view&id=24) is used. 
 The CCM2 data is divided in Data Windows. The relevant layers of the databases for this guide are "SEAOUTLETS" (basin_file), "RIVERSEGMENTS"(river_file) and "RIVERNODES" (confluences).
 
+Information of barriers in this tutorial are taken from [AMBER](https://www.nature.com/articles/s41586-020-3005-2).
 
-Information of barriers are taken from [AMBER](https://www.nature.com/articles/s41586-020-3005-2).
+By using 'sf' objects and their ability to link geographic information to the data.frame structure, it is easy to edit the rivernetwork while keeping the geometry.
 
-The files and databases can be imported in R. Set the path to the location of the database and dbname to the name of the database!
+## Data import
+
+Set the path to the location of the database and dbname to the name of the database!
+
 For the import of the barriers set amberpath to the path of the csv file with the barrier information.
 
-```{r read shapes , message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
-#Segments and Confluences
-window <- "2004"
-#dbname <- paste0("LAEA_W",window,".gdb") 
-#path <- paste0("River_data/CCM/CCM21_LAEA_window",window,"/ccm21/") 
-path <- paste0("C:/Users/Vicky/Documents/phd/CCM2/") 
-dbname <- paste0("WGS84_W",window,".gdb")
 
-#ogrListLayers(paste0(path,dbname)) #List the Layers of the db 
+
+```{r read shapes , message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+## Segments and Confluences
+# choose data window (see CCM2_data_windows.JPG)
+window <- "2004" 
+# set dbname and path (location of data on your local computer) 
+dbname <- paste0("LAEA_W",window,".gdb") #"WGS84_W",window,".gdb" 
+path <- paste0("/home/vicky/Documents/LAEA/") 
+
+file.exists(path)#Check that you have chosen the right path
+#ogrListLayers(paste0(path,dbname))#lists the Layers of the db 
 options(knitr.duplicate.label = "allow")
 
 basin_file <- st_read(paste0(path,dbname), layer = "SEAOUTLETS" )
 river_file  <- st_read(paste0(path,dbname), layer = "RIVERSEGMENTS" )
 confluences <- st_read(paste0(path,dbname), layer = "RIVERNODES" )
 
-#Barriers
-#amberpath <- "River_data/AMBER/atlas.csv" 
-amberpath <- "C:/Users/Vicky/Documents/phd/Amber/atlas.csv"  
+## Barriers
+#path of the Amber barriers on your local computer
+amberpath <- "/home/vicky/Documents/AMBER/atlas.csv"  
 
 amber <- fread(amberpath)
 
@@ -84,8 +90,7 @@ To choose the River Basin you can either look for a name of a river (in this exa
 
 ```{r read basin, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 basin_df <- basin_file %>% as.data.frame()
-
-#unique(basin_df$NAME) #returns the names of the river present in the database
+#unique(basin_df$NAME) #returns the names of the rivers present in the database
 
 basinname <- "Tajo"
 basin_id <- unique(na.omit(basin_df[basin_df$NAME == basinname,]$WSO_ID)) #WSO_ID River Basin ID
@@ -96,9 +101,10 @@ basn <- basin_file[basin_file$WSO_ID== basin_id, ] #SEAOUTLETS
 riv <- river_file[river_file$WSO_ID== basin_id,] #RIVERSEGMENTS
 #Nodes
 nodes <- confluences[confluences$WSO_ID== basin_id, ] #RIVERNODES
+
 ```
 
-The projection of the sf objects have to match.
+The projections of the sf objects have to match.
 
 ```{r match crs, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 #Match crs
@@ -121,26 +127,30 @@ Further work to this topic is in progress.
 A first subset of the barriers of the Amber dataset is created using the polygon of the  basinarea (with a buffer of 1 m). 
 
 ```{r intersect dam , message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
+
 dam <- st_intersection(dam_in, st_buffer(shape_basin,1)) 
+
 ```
+
+
 # Functions to support data processing
 
 The functions for pre-processing have been adapted and must be loaded in the global environment.
 Functions in global environment: dam_snap_ccm, dam_include, edges_list.R
 
-```{r source processing funs ,echo = TRUE}
-
-source("functions/dam_snap_ccm.R")
-source("functions/dam_include.R")
-source("functions/edges_list.R")
-
+```{r source processing funs ,echo = TRUE, message = FALSE}
+#path of functions on your global computer
+source("/home/vicky/github/riverconnCCM2/functions/dam_snap_ccm.R")
+source("/home/vicky/github/riverconnCCM2/functions/dam_include.R")
+source("/home/vicky/github/riverconnCCM2/functions/edges_list.R")
 
 ```
 
 # River shapefile preprocessing
 
-The attributes of the river segments the package is built on (ECRINS) have different names than the CCM2 database.
-The number of accumulated cells (UP_CELLS in ECRINS) is a proxy of the upstream catchment area. This attribute is used in riverconn for the calculation of the index for each barrier (and for pruning of upstream segments in the pre-processing which will be left out here).
+The attributes of the river segments on which the riverconn package is based (ECRINS) have different names to the CCM2 database.
+
+The number of accumulated cells (UP_CELLS in ECRINS), a proxy of the upstream catchment area, is used for the calculation of the index for each barrier.
 The equivalent attribute in CCM2 is CONT_PIXELS (Area upstream the From Node drained by the river segment in 100x100 grid cells).
 
 ```{r pocess upstream area, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
@@ -148,6 +158,7 @@ The equivalent attribute in CCM2 is CONT_PIXELS (Area upstream the From Node dra
 shape_river$UP_CELLS = shape_river$CONT_PIXELS 
 shape_river$alt = shape_river$ALT_GRADIENT 
 st_geometry(shape_river) <- "geometry"
+
 ```
 
 As a next step transform the object of class ‘sf’ with ‘MULTILINESTRING’ geometry into an object of class ‘sf’ containing multiple ‘LINESTRING’ geometries. 
@@ -160,26 +171,25 @@ shape_river_simple <- shape_river %>%
 
 
 shape_river_line <- shape_river %>% st_cast(.,"LINESTRING" ) %>% 
-  mutate(EdgeID = as.character(1:nrow(.)))  ##id = WSO1_ID  ##CHANGE and test!
+  mutate(EdgeID = as.character(1:nrow(.)))  ##id = WSO1_ID  ##?
+
 ```
 
 # Dams pre-processing 
 
-The locations of the barriers in the AMBER dataset have some errors, furthermore the CCM2 database missing some river segments due to the resolution (100m). To include the dams in the network the locations of the barriers have to overlap with the segments. This issue in not solved yet in a satisfactory manner. 
-Nevertheless the snapping function was adapted for further development.
+The locations of the barriers in the AMBER dataset have errors, and the CCM2 database is missing some river segments. In order to include the dams in the network, the locations of the barriers must overlap with the segments. This problem has not yet been solved satisfactorily. 
 
-In addition, since the snapping for large networks with multiple dams can have a long running time a instruction to parallel the computation is presented here.
+Nevertheless the snapping function of riverconn was adapted for further development.
 
-The function dam_snap_ccm  is used to snap the barrier points to the river network based on a tolerance threshold (default 10). The function changes the location of the points in distance of the threshodl to overlap with the river network.
+In addition, since snapping can take a long time for large networks with multiple dams, an instruction for parallelizing the computation is presented here.
+
+The function dam_snap_ccm  is used to snap the barrier points to the river network based on a tolerance threshold (default 10). The function changes the location of the points in distance of the threshold to overlap with the river network.
 
 To parallelise the snapping change libPath to the path of your R library and change 'funpath' to the directory of the function 'dam_snap_ccm'.
 
-```{r dams snap parrallel, message = FALSE,echo=FALSE, width = 60, warning = FALSE}
+```{r dams snap parrallel, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 
 x <- dam %>% mutate(id = GUID) %>% dplyr::select(id) 
-
-#change to your R lib location and change to location of function 
-#.libPaths() #find lib path
 
 #setup parallel back-end to use many processors
 cores=detectCores()
@@ -188,11 +198,12 @@ cl <- makeCluster(cores[1]-1) #not to overload your computer
 registerDoParallel(cl)
 
 # Loop
-clusterEvalQ(cl, .libPaths("C:/Users/Vicky/AppData/Local/R/win-library/4.2" )) #Change  here your R library path
+#change to your R lib location and change to location of function 
+#.libPaths() #find lib path
+clusterEvalQ(cl, .libPaths("/home/vicky/R/x86_64-pc-linux-gnu-library/4.2" )) #Change  here your R library path
 
-funpat <- "functions/" #path of function to run parallel 
-#getwd()
-dir.exists(funpat)
+funpat <- "/home/vicky/github/riverconnCCM2/functions/" #path of function to run parallel 
+#dir.exists(funpat)
 
 output <- foreach(i=1:nrow(x), .combine = rbind, 
                   .packages= c('dplyr', 'sf')) %dopar% {
@@ -206,7 +217,7 @@ stopCluster(cl)
 dams_snapped <- output
 
 ```
-The barriers that overlap with the river network sf will be considered. In case two dams were snapped to the same geographic position, duplicates will be removed. Passablity values are assigned to the obtained snapped points. Here, uniform (not dam-dependent) passabilities were assigned: 0.8 for downstream passability, and 0.1 for upstream passability. An id is assigned to each of the geographic points.
+Barriers that overlap with the river network sf are taken into account. If two dams are snapped to the same geographical position, duplicates are removed. . Passability values are assigned to the resulting snapped points. Uniform (not dam-dependent) passabilities were assigned: 0.8 for downstream passability, and 0.1 for upstream passability. An id is assigned to each of the geographic points.
 
 ```{r dams select, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 # Retain dams that were snapped
@@ -239,7 +250,9 @@ network_links <- rbind(
     rename(id_barrier = ID, geometry = SHAPE)) %>% ##enter here name of geometry column
   mutate(id_links = 1:nrow(.))
 ```
+
 A plot can reveal if the process was successful.
+
 ```{r plot in, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 ggplot() +
   coord_fixed() +
@@ -261,7 +274,9 @@ To include the barriers in the network function 'dam_include' creates new segmen
 river_net_sliced <- dam_include(network_links, shape_river_line)
 
 ```
+
 Plotting can show weird behaviors of the join operation.
+
 ```{r plot weird, message = FALSE, collapse = TRUE, width = 60, warning = FALSE}
 ggplot() +
   coord_fixed() +
@@ -271,7 +286,6 @@ ggplot() +
   theme(legend.position = "bottom")+
   ggspatial::annotation_north_arrow(location = "br")+
   ggspatial::annotation_scale(location = "bl", style = "ticks")
-
 
 ```
 
@@ -292,6 +306,7 @@ river_graph <- graph_from_data_frame(
   d = edgedf,
   directed = TRUE,
   v = vertices)
+
 
 ```
 
