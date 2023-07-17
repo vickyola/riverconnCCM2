@@ -20,6 +20,7 @@ dam_include <- function(networklinks,rivernetwork){
   for (i in 1:nrow(dams)){
     ndam <- dams[i,]  
     seg <- segments[st_nearest_feature(ndam, segments), ] #%>%  st_combine()
+
     
     #plot(st_geometry(seg))
     
@@ -30,7 +31,8 @@ dam_include <- function(networklinks,rivernetwork){
     #  plot(st_geometry(newsegs[1,] ), add= TRUE, col = "blue")
     # plot(st_geometry(newsegs[2,] ), add= TRUE, col = "green")
     
-    ##TODO more attributes
+    ##change here. if necessary new attributes of splitted segments 
+    #be careful some attributes change when spillted ..
     bindnewsegs <-rbind( newsegs[1,] %>%
                            mutate(TONODE = as.integer(ndam$id_barrier ), EdgeID =as.character(paste0(EdgeID,"_1"))),
                          newsegs[2,] %>%

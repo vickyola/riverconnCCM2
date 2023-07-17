@@ -14,6 +14,9 @@ dam_snap_ccm<-  function(dams, rivershape, max_dist = 100) {
   dams <- dams
   lines <- rivershape %>% st_as_sf()
   nf <- lines[st_nearest_feature(dams, lines), ]
+  ##change here to identifier of segment in dam dataset (probably WSO_ID). test it whether it works!
+  #nf <- lines[lines$WSO_ID== ndam$WSO_ID,] 
+  
   #plot(st_geometry(nf))
   #plot(st_geometry(dams),add=TRUE, col="blue")
   
@@ -24,11 +27,9 @@ dam_snap_ccm<-  function(dams, rivershape, max_dist = 100) {
     nf.points.min <- nf.points[ which.min(st_distance(dams, nf.points)),]
     st_geometry(dams) <- st_geometry(nf.points.min)
     
-    
+    #ignore this:
     #%>%     st_buffer(1)
-    
-    
-    #try!! 
+
     #nf_network <- sfnetwork(nf.points, nf.lines, edges_as_lines = TRUE)
     #nf_blend  = st_network_blend(nf_network, dams, tolerance = 90)
 
