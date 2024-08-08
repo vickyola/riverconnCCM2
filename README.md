@@ -115,7 +115,7 @@ for idx, row in river_data.iterrows():
 
 Compute connectivity indices:
 
-python
+```
 
 # Example function to compute an index
 def compute_connectivity_index(graph):
@@ -125,6 +125,7 @@ def compute_connectivity_index(graph):
 # Compute indices
 connectivity_index = compute_connectivity_index(G)
 
+```
 7. Visualization
 
 Plot the results:
