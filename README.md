@@ -28,7 +28,7 @@ Place your geospatial datasets in the project directory. The required files incl
     Dam data (dam_file.shp)
     River data (river_file.shp)
 
-Usage
+## Usage
 1. Data Selection
 
 Choose a river basin using its name or unique identifier:
@@ -104,13 +104,14 @@ import networkx as nx
 
 # Create a graph from river data
 G = nx.Graph()
-```
+
 # Add nodes and edges
 for idx, row in river_data.iterrows():
     G.add_node(idx, **row.drop('geometry').to_dict())
     # Add edges based on river connectivity (example)
     # G.add_edge(node1, node2)
 
+```
 6. Index Calculations
 
 Compute connectivity indices:
@@ -126,6 +127,7 @@ def compute_connectivity_index(graph):
 connectivity_index = compute_connectivity_index(G)
 
 ```
+
 7. Visualization
 
 Plot the results:
