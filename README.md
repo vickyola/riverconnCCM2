@@ -1,32 +1,143 @@
-# Approach to use riverconn with CMM2 data
+# River Connectivity Analysis Project
 
-This repository contains instructions for preprocessing CCM2 data for river network connectivity calculations using the R package riverconn. You can find the riverconn package on [GitHub](https://github.com/cran/riverconn).
+This project focuses on analyzing river connectivity using geospatial data and network analysis techniques. The workflow involves data selection, preprocessing, spatial transformations, and connectivity analysis. Below is a structured guide to understand and execute the provided Python code for this project.
 
-## Functions
-The `functions` folder contains the main important functions for the preprocessing of CCM2 data.
+## Overview
 
-**dam_include.R**
-- Function to create new segments at the location of a barrier and remove the old segment prior to the barrier.
-- This function is used for segment attributes that remain the same when including the dam, or for attributes that can be calculated (e.g., length).
-- For other attributes where the CCM2 segment information cannot be changed, the next confluence can be used.
-- Note: This function may need further development to handle multiple dams per segment.
+The project involves the following key steps:
 
-**dam_snap_ccm.R**
-- Function to relocate dam positions to overlap with the network.
-- Currently a work in progress, where dams are snapped to the next node of a Linestring.
-- The aim is to change the network as well and include the dam as a point of the LINESTRING (proper snapping).
+1. **Data Selection**: Choose the river basin of interest.
+2. **CRS Matching**: Ensure spatial data are in the same coordinate reference system.
+3. **Data Preprocessing**: Prepare and subset data for analysis.
+4. **Geospatial Transformations**: Process and transform spatial data.
+5. **Network Construction**: Build and refine the river network graph.
+6. **Index Calculations**: Compute various connectivity indices.
+7. **Visualization**: Plot the results to interpret connectivity metrics.
 
-**edgelist.R**
-- Function to create the edge list for an igraph object.
-- This function can be shortened, as it performs the required tasks.
+## Prerequisites
 
-## Additional Information
-- **CCM2_Windows2b.JPG**: CCM2 data windows screenshot.
-- **riverconn_vickyR.R**: This file contains my code where I experiment with new ideas.
-- **Formulas_indices.pdf**: A list of all the indices that should be included in RivConnect.
+- **Python Libraries**: Ensure you have the required Python libraries installed, including `pandas`, `geopandas`, `networkx`, and `matplotlib`. Use the following command to install any missing packages:
 
-## What's Next?
-- Clean up the code.
-- Summarize Rivernodes in one database and compare with Riversegments.
-- Create a dashboard or R Shiny app.
+  ```bash
+  pip install pandas geopandas networkx matplotlib
+Data Files
 
+Place your geospatial datasets in the project directory. The required files include:
+
+    Basin data (basin_file.csv)
+    Dam data (dam_file.shp)
+    River data (river_file.shp)
+
+Usage
+1. Data Selection
+
+Choose a river basin using its name or unique identifier:
+
+python
+
+import pandas as pd
+
+# Load basin data
+basin_df = pd.read_csv('path_to_basin_file.csv')
+
+# Select river basin
+basin_name = "Tajo"
+basin_id = basin_df[basin_df['NAME'] == basin_name]['WSO_ID'].unique()
+
+# Subset the basin data
+basin_data = basin_df[basin_df['WSO_ID'] == basin_id]
+
+2. CRS Matching
+
+Ensure all spatial data are in the same CRS:
+
+python
+
+import geopandas as gpd
+
+# Load and transform CRS
+dam_data = gpd.read_file('path_to_dam_file.shp')
+dam_data = dam_data.to_crs(epsg=4326)
+
+# Load and transform other spatial data
+basin_shape = gpd.read_file('path_to_basin_shape_file.shp').to_crs(epsg=4326)
+
+3. Data Preprocessing
+
+Prepare and subset the data:
+
+python
+
+# Buffer basin shape
+buffered_basin = basin_shape.buffer(1)
+
+# Intersect with dams
+dam_subset = gpd.overlay(dam_data, buffered_basin, how='intersection')
+
+4. Geospatial Transformations
+
+Transform and simplify geometries:
+
+python
+
+# Load river data
+river_data = gpd.read_file('path_to_river_file.shp').to_crs(epsg=4326)
+
+# Simplify river shapes
+simplified_rivers = river_data.copy()
+simplified_rivers['geometry'] = simplified_rivers['geometry'].simplify(tolerance=0.01)
+
+5. Network Construction
+
+Build and refine the river network graph:
+
+python
+
+import networkx as nx
+
+# Create a graph from river data
+G = nx.Graph()
+
+# Add nodes and edges
+for idx, row in river_data.iterrows():
+    G.add_node(idx, **row.drop('geometry').to_dict())
+    # Add edges based on river connectivity (example)
+    # G.add_edge(node1, node2)
+
+6. Index Calculations
+
+Compute connectivity indices:
+
+python
+
+# Example function to compute an index
+def compute_connectivity_index(graph):
+    # Placeholder function for index calculation
+    return nx.algorithms.connectivity.degree_connected_components(graph)
+
+# Compute indices
+connectivity_index = compute_connectivity_index(G)
+
+7. Visualization
+
+Plot the results:
+
+python
+
+import matplotlib.pyplot as plt
+
+# Plot river network
+fig, ax = plt.subplots()
+simplified_rivers.plot(ax=ax, color='blue', linewidth=0.5)
+dam_subset.plot(ax=ax, color='red', markersize=5)
+plt.title('River Network and Dams')
+plt.xlabel('Longitude')
+plt.ylabel('Latitude')
+plt.show()
+
+Contributing
+
+Feel free to fork the repository and submit pull requests for improvements or bug fixes.
+License
+
+This project is licensed under the MIT License. See the LICENSE file for details.
